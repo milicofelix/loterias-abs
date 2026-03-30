@@ -6,7 +6,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('accepts a valid quina combination', function () {
+it('aceita uma combinação quina válida', function () {
     $modality = LotteryModality::factory()->quina()->create();
 
     $result = app(CombinationValidator::class)->validate($modality, [1, 5, 17, 33, 80]);
@@ -15,7 +15,7 @@ it('accepts a valid quina combination', function () {
         ->and($result['errors'])->toBeEmpty();
 });
 
-it('rejects a quina combination with less than 5 numbers', function () {
+it('rejeita uma combinação quina com menos de 5 números', function () {
     $modality = LotteryModality::factory()->quina()->create();
 
     $result = app(CombinationValidator::class)->validate($modality, [1, 5, 17, 33]);
@@ -24,7 +24,7 @@ it('rejects a quina combination with less than 5 numbers', function () {
         ->and($result['errors'])->toContain('A combinação deve ter pelo menos 5 números.');
 });
 
-it('rejects a quina combination with number above allowed range', function () {
+it('rejeita uma combinação de quina com número acima do intervalo permitido', function () {
     $modality = LotteryModality::factory()->quina()->create();
 
     $result = app(CombinationValidator::class)->validate($modality, [1, 5, 17, 33, 81]);
@@ -33,7 +33,7 @@ it('rejects a quina combination with number above allowed range', function () {
         ->and($result['errors'])->toContain('Os números devem estar entre 1 e 80.');
 });
 
-it('rejects repeated numbers when modality does not allow repetition', function () {
+it('Rejeita números repetidos quando a modalidade não permite repetição.', function () {
     $modality = LotteryModality::factory()->quina()->create();
 
     $result = app(CombinationValidator::class)->validate($modality, [1, 5, 17, 17, 80]);
@@ -42,7 +42,7 @@ it('rejects repeated numbers when modality does not allow repetition', function 
         ->and($result['errors'])->toContain('A combinação não pode conter números repetidos.');
 });
 
-it('accepts a valid mega sena combination', function () {
+it('aceita uma combinação mega sena válida', function () {
     $modality = LotteryModality::factory()->megaSena()->create();
 
     $result = app(CombinationValidator::class)->validate($modality, [1, 5, 17, 33, 45, 60]);
@@ -51,7 +51,7 @@ it('accepts a valid mega sena combination', function () {
         ->and($result['errors'])->toBeEmpty();
 });
 
-it('rejects mega sena number above range', function () {
+it('rejeita número mega sena acima do intervalo', function () {
     $modality = LotteryModality::factory()->megaSena()->create();
 
     $result = app(CombinationValidator::class)->validate($modality, [1, 5, 17, 33, 45, 61]);

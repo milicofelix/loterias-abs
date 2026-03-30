@@ -20,9 +20,9 @@ class DatabaseSeeder extends Seeder
             LotteryModalitySeeder::class,
         ]);
 
-        User::factory()->create([
-            'name' => 'Adriano F Freitas',
-            'email' => 'milicofelix@gmail.com',
-        ]);
+        // User::factory()->create([
+        //     'name' => 'Adriano F Freitas',
+        //     'email' => 'milicofelix@gmail.com',
+        // ]);
     }
 }

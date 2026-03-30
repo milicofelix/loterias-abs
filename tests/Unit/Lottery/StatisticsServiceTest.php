@@ -7,7 +7,7 @@ use Tests\Support\CreatesDraws;
 
 uses(RefreshDatabase::class, CreatesDraws::class);
 
-it('calculates total frequency for a modality', function () {
+it('Calcula a frequência total para uma modalidade.', function () {
     $quina = LotteryModality::factory()->quina()->create();
 
     $this->createDrawWithNumbers($quina, 1, '2026-01-01', [1, 2, 3, 4, 5]);
@@ -23,7 +23,7 @@ it('calculates total frequency for a modality', function () {
         ->and($stats[80])->toBe(0);
 });
 
-it('does not mix frequencies from other modalities', function () {
+it('Não mistura frequências de outras modalidades.', function () {
     $quina = LotteryModality::factory()->quina()->create();
     $mega = LotteryModality::factory()->megaSena()->create();
 
@@ -41,7 +41,7 @@ it('does not mix frequencies from other modalities', function () {
         ->and($stats[9])->toBe(0);
 });
 
-it('can calculate frequencies using only the last draws', function () {
+it('É possível calcular as frequências usando apenas os últimos sorteios.', function () {
     $quina = LotteryModality::factory()->quina()->create();
 
     $this->createDrawWithNumbers($quina, 1, '2026-01-01', [1, 2, 3, 4, 5]);
@@ -57,7 +57,7 @@ it('can calculate frequencies using only the last draws', function () {
         ->and($stats[13])->toBe(1);
 });
 
-it('returns all valid numbers of the modality even when frequency is zero', function () {
+it('Retorna todos os números válidos da modalidade, mesmo quando a frequência é zero.', function () {
     $quina = LotteryModality::factory()->quina()->create();
 
     $this->createDrawWithNumbers($quina, 1, '2026-01-01', [10, 20, 30, 40, 50]);

@@ -30,6 +30,14 @@ expect()->extend('toBeOne', function () {
     return $this->toBe(1);
 });
 
+expect()->extend('toBeSorted', function () {
+    $actual = $this->value;
+    $sorted = $actual;
+    sort($sorted);
+
+    return $this->toBe($sorted);
+});
+
 /*
 |--------------------------------------------------------------------------
 | Functions
