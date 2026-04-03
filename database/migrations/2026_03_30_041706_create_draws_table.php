@@ -13,6 +13,7 @@ return new class extends Migration
             $table->foreignId('lottery_modality_id')->constrained()->cascadeOnDelete();
             $table->unsignedInteger('contest_number');
             $table->date('draw_date');
+            $table->json('metadata')->nullable();
             $table->timestamps();
 
             $table->unique(['lottery_modality_id', 'contest_number']);

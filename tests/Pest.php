@@ -30,6 +30,10 @@ expect()->extend('toBeOne', function () {
     return $this->toBe(1);
 });
 
+beforeEach(function () {
+    $this->withoutVite();
+});
+
 expect()->extend('toBeSorted', function () {
     $actual = $this->value;
     $sorted = $actual;

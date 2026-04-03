@@ -8,6 +8,8 @@ services:
     image: php82-fpm-base:1
     volumes:
       - ./:/var/www/app   # ou ./laravel_app
+    ports:
+      - "5173:5173"
     working_dir: /var/www/app
     environment:
       - COMPOSER_MEMORY_LIMIT=-1

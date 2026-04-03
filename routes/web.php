@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Lottery\ModalityController;
+use App\Http\Controllers\Lottery\GameController;
 
 Route::get('/', function () {
     return view('welcome');
@@ -19,27 +21,34 @@ Route::middleware('auth')->group(function () {
 
 require __DIR__.'/auth.php';
 
-Route::prefix('mega-sena')->group(function () {
-    Route::get('/', [MegaSenaController::class, 'index'])->name('mega-sena.index');
-    Route::get('/create', [MegaSenaController::class, 'create'])->name('mega-sena.create');
-    Route::post('/store', [MegaSenaController::class, 'store'])->name('mega-sena.store');
-    Route::get('/edit/{id}', [MegaSenaController::class, 'edit'])->name('mega-sena.edit');
-    Route::put('/update/{id}', [MegaSenaController::class, 'update'])->name('mega-sena.update');
-    Route::delete('/destroy/{id}', [MegaSenaController::class, 'destroy'])->name('mega-sena.destroy');
-    Route::get('/aposta', [MegaSenaController::class, 'aposta'])->name('mega-sena.aposta');
-    Route::get('/buscar/{numero}', [MegaSenaController::class, 'buscarPorConcurso'])->name('mega-sena.buscar');
-    Route::middleware('auth')->get('/minhas-apostas', [ApostaController::class, 'minhasApostas'])->name('mega-sena.minhas-apostas');
-});
+Route::prefix('lottery')->group(function () {
+    Route::get('/modalities', [ModalityController::class, 'index'])->name('lottery.modalities.index');
 
-// 🔒 Rotas protegidas (fora do prefixo)
-Route::middleware(['auth'])->prefix('api')->group(function () {
-    Route::get('/apostas', [ApostaController::class, 'index'])->name('apostas.index');
-    Route::post('/apostas', [ApostaController::class, 'store'])->name('apostas.store');
-});
+    Route::get('/modalities/{modality}', [ModalityController::class, 'show'])
+        ->name('lottery.modalities.show');
 
-Route::middleware(['auth'])->prefix('sorteios')->group(function () {
-    Route::get('/',        [SorteioController::class, 'index'])->name('sorteios.index');
-    Route::get('/create',  [SorteioController::class, 'create'])->name('sorteios.create');
-    Route::post('/',       [SorteioController::class, 'store'])->name('sorteios.store');
-});
+    Route::post('/modalities/{modality}/generate', [ModalityController::class, 'generate']);
 
+    Route::post('/modalities/{modality}/analyze', [ModalityController::class, 'analyze']);
+
+    Route::get('/modalities/{modality}/play', [GameController::class, 'play'])
+        ->name('lottery.modalities.play');
+
+    Route::get('/modalities/{modality}/history', [ModalityController::class, 'history'])
+        ->name('lottery.modalities.history');
+    
+    Route::get('/modalities/{modality}/combination-history', [ModalityController::class, 'combinationHistory'])
+        ->name('lottery.modalities.combination-history');
+    
+    Route::get('/modalities/{modality}/combination-history', [ModalityController::class, 'combinationHistory'])
+        ->name('lottery.combination-history');
+
+    Route::delete('/modalities/{modality}/combination-history/{item}', [ModalityController::class, 'destroyCombinationHistory'])
+        ->name('lottery.combination-history.destroy');
+    
+    Route::delete('/modalities/{modality}/combination-history', [ModalityController::class, 'clearCombinationHistory'])
+        ->name('lottery.combination-history.clear');
+    
+     Route::post('/modalities/{modality}/sync-results', [ModalityController::class, 'syncResults'])
+        ->name('lottery.modalities.sync-results');
+});

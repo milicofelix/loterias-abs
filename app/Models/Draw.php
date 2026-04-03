@@ -15,10 +15,12 @@ class Draw extends Model
         'lottery_modality_id',
         'contest_number',
         'draw_date',
+        'metadata',
     ];
 
     protected $casts = [
         'draw_date' => 'date',
+        'metadata' => 'json',
     ];
 
     public function modality(): BelongsTo
