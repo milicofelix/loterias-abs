@@ -1,4 +1,4 @@
-import { Link } from '@inertiajs/react';
+import { Link, router, useForm, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import {
     BarChart,
@@ -27,6 +27,8 @@ export default function Dashboard({
     latestDrawExplanation = null,
 }) {
     const [selectedWindow, setSelectedWindow] = useState('all');
+    const { flash = {} } = usePage().props;
+    const importForm = useForm({ spreadsheet: null });
 
     const selectedFrequencies = useMemo(() => {
         switch (selectedWindow) {
@@ -68,6 +70,23 @@ export default function Dashboard({
     }));
 
     const latestDraw = recentDraws.length > 0 ? recentDraws[0] : null;
+
+
+    const submitImport = (event) => {
+        event.preventDefault();
+
+        importForm.post(`/lottery/modalities/${modality.id}/import-spreadsheet`, {
+            preserveScroll: true,
+            forceFormData: true,
+            onSuccess: () => importForm.reset('spreadsheet'),
+        });
+    };
+
+    const startSync = () => {
+        router.post(`/lottery/modalities/${modality.id}/sync-results`, {}, {
+            preserveScroll: true,
+        });
+    };
 
     const quinaBlue = '#0c5a96';
     const quinaBlueDark = '#0b3e6a';
@@ -131,6 +150,24 @@ export default function Dashboard({
                     </div>
 
                     <div className="flex gap-3 flex-wrap">
+                        {modality.code === 'quina' ? (
+                            <button
+                                type="button"
+                                onClick={() => router.post(`/lottery/modalities/${modality.id}/sync-results`)}
+                                className="transition hover:opacity-95"
+                                style={{
+                                    backgroundColor: '#fff',
+                                    color: quinaBlue,
+                                    padding: '14px 22px',
+                                    borderRadius: 16,
+                                    fontWeight: 700,
+                                    border: `1px solid ${quinaBorder}`,
+                                }}
+                            >
+                                Sincronizar da CAIXA
+                            </button>
+                        ) : null}
+
                         <Link
                             href={`/lottery/modalities/${modality.id}/play`}
                             className="transition hover:opacity-95"
@@ -147,6 +184,216 @@ export default function Dashboard({
                         </Link>
                     </div>
                 </header>
+
+                {flash.success ? (
+                    <div
+                        style={{
+                            backgroundColor: '#ecfdf3',
+                            border: '1px solid #abefc6',
+                            color: '#067647',
+                            borderRadius: 20,
+                            padding: '16px 20px',
+                            fontWeight: 600,
+                        }}
+                    >
+                        {flash.success}
+                    </div>
+                ) : null}
+
+                {flash.error ? (
+                    <div
+                        style={{
+                            backgroundColor: '#fef3f2',
+                            border: '1px solid #fecdca',
+                            color: '#b42318',
+                            borderRadius: 20,
+                            padding: '16px 20px',
+                            fontWeight: 600,
+                        }}
+                    >
+                        {flash.error}
+                    </div>
+                ) : null}
+
+
+                <section
+                    className="grid gap-6 xl:grid-cols-[1.25fr_1fr]"
+                >
+                    <div
+                        style={{
+                            backgroundColor: quinaCard,
+                            border: `1px solid ${quinaBorder}`,
+                            borderRadius: 28,
+                            boxShadow: '0 8px 32px rgba(15, 76, 129, 0.06)',
+                            padding: 28,
+                        }}
+                    >
+                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                            <div>
+                                <div
+                                    style={{
+                                        color: quinaMuted,
+                                        fontSize: 15,
+                                        fontWeight: 700,
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.08em',
+                                    }}
+                                >
+                                    Importação manual
+                                </div>
+                                <h2
+                                    className="mt-2"
+                                    style={{
+                                        color: quinaBlue,
+                                        fontSize: 'clamp(1.6rem, 2.4vw, 2.1rem)',
+                                        fontWeight: 800,
+                                        lineHeight: 1.1,
+                                    }}
+                                >
+                                    Enviar planilha oficial da {modality.name}
+                                </h2>
+                                <p
+                                    className="mt-3 max-w-2xl"
+                                    style={{ color: quinaMuted, fontSize: 16, fontWeight: 500 }}
+                                >
+                                    Faça o upload manual do arquivo XLSX/XLS da CAIXA. O sistema importa apenas concursos novos e ignora os já existentes.
+                                </p>
+                            </div>
+                        </div>
+
+                        <form onSubmit={submitImport} className="mt-6 space-y-4">
+                            <div>
+                                <label
+                                    htmlFor="spreadsheet"
+                                    className="block mb-2"
+                                    style={{ color: quinaBlueDark, fontSize: 14, fontWeight: 700 }}
+                                >
+                                    Planilha dos sorteios
+                                </label>
+                                <input
+                                    id="spreadsheet"
+                                    type="file"
+                                    accept=".xlsx,.xls"
+                                    onChange={(event) => importForm.setData('spreadsheet', event.target.files?.[0] ?? null)}
+                                    className="block w-full rounded-2xl border bg-white px-4 py-3 text-sm file:mr-4 file:rounded-xl file:border-0 file:px-4 file:py-2 file:font-semibold"
+                                    style={{ borderColor: quinaBorder, color: quinaBlueDark }}
+                                />
+                                <p className="mt-2 text-sm" style={{ color: quinaMuted }}>
+                                    Formatos aceitos: XLSX e XLS.
+                                </p>
+                                {importForm.errors.spreadsheet ? (
+                                    <p className="mt-2 text-sm font-semibold text-red-600">{importForm.errors.spreadsheet}</p>
+                                ) : null}
+                            </div>
+
+                            <div className="flex gap-3 flex-wrap">
+                                <button
+                                    type="submit"
+                                    disabled={importForm.processing}
+                                    className="transition hover:opacity-95 disabled:opacity-60"
+                                    style={{
+                                        backgroundColor: quinaBlue,
+                                        color: '#fff',
+                                        padding: '12px 18px',
+                                        borderRadius: 16,
+                                        fontWeight: 700,
+                                        boxShadow: '0 8px 24px rgba(12, 90, 150, 0.18)',
+                                    }}
+                                >
+                                    {importForm.processing ? 'Importando planilha...' : 'Importar planilha manualmente'}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={startSync}
+                                    className="transition hover:opacity-95"
+                                    style={{
+                                        backgroundColor: '#fff',
+                                        color: quinaBlue,
+                                        padding: '12px 18px',
+                                        borderRadius: 16,
+                                        fontWeight: 700,
+                                        border: `1px solid ${quinaBorder}`,
+                                    }}
+                                >
+                                    Sincronizar da CAIXA
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div
+                        style={{
+                            backgroundColor: quinaCard,
+                            border: `1px solid ${quinaBorder}`,
+                            borderRadius: 28,
+                            boxShadow: '0 8px 32px rgba(15, 76, 129, 0.06)',
+                            padding: 28,
+                        }}
+                    >
+                        <div
+                            style={{
+                                color: quinaMuted,
+                                fontSize: 15,
+                                fontWeight: 700,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.08em',
+                            }}
+                        >
+                            Retorno da importação
+                        </div>
+
+                        <h2
+                            className="mt-2"
+                            style={{
+                                color: quinaBlue,
+                                fontSize: 'clamp(1.5rem, 2.2vw, 2rem)',
+                                fontWeight: 800,
+                                lineHeight: 1.1,
+                            }}
+                        >
+                            Último processamento
+                        </h2>
+
+                        <div className="mt-5 space-y-3">
+                            {flash.success ? (
+                                <div className="rounded-2xl px-4 py-3" style={{ backgroundColor: '#e9f7ef', color: '#146c43', border: '1px solid #b7e4c7' }}>
+                                    {flash.success}
+                                </div>
+                            ) : null}
+
+                            {flash.error ? (
+                                <div className="rounded-2xl px-4 py-3" style={{ backgroundColor: '#fdecec', color: '#b42318', border: '1px solid #f5c2c0' }}>
+                                    {flash.error}
+                                </div>
+                            ) : null}
+                        </div>
+
+                        {flash.import_result ? (
+                            <div className="mt-5 space-y-4">
+                                <div className="text-sm" style={{ color: quinaMuted }}>
+                                    Arquivo: <span style={{ color: quinaBlueDark, fontWeight: 700 }}>{flash.import_result.filename}</span>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-3">
+                                    <ResultStatCard label="Importados" value={flash.import_result.imported} color={quinaBlue} />
+                                    <ResultStatCard label="Já existentes" value={flash.import_result.existing} color={quinaBlueDark} />
+                                    <ResultStatCard label="Ignorados" value={flash.import_result.skipped} color={quinaBall} />
+                                </div>
+                            </div>
+                        ) : flash.sync_result ? (
+                            <div className="mt-5 grid grid-cols-3 gap-3">
+                                <ResultStatCard label="Importados" value={flash.sync_result.imported} color={quinaBlue} />
+                                <ResultStatCard label="Já existentes" value={flash.sync_result.existing} color={quinaBlueDark} />
+                                <ResultStatCard label="Ignorados" value={flash.sync_result.skipped} color={quinaBall} />
+                            </div>
+                        ) : (
+                            <p className="mt-5 text-sm" style={{ color: quinaMuted }}>
+                                Quando você importar uma planilha ou sincronizar com a CAIXA, o resumo aparecerá aqui.
+                            </p>
+                        )}
+                    </div>
+                </section>
 
                 {latestDraw ? (
                     <div className="grid xl:grid-cols-[1.7fr_1fr] gap-6">
@@ -707,6 +954,27 @@ export default function Dashboard({
                         </div>
                     )}
                 </section>
+            </div>
+        </div>
+    );
+}
+
+
+function ResultStatCard({ label, value, color }) {
+    return (
+        <div
+            style={{
+                backgroundColor: '#f8fbff',
+                border: '1px solid rgba(15, 76, 129, 0.12)',
+                borderRadius: 22,
+                padding: 18,
+            }}
+        >
+            <div style={{ color: '#667085', fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                {label}
+            </div>
+            <div className="mt-2" style={{ color, fontSize: 30, fontWeight: 800, lineHeight: 1 }}>
+                {value}
             </div>
         </div>
     );

@@ -29,7 +29,13 @@ Route::prefix('lottery')->group(function () {
 
     Route::post('/modalities/{modality}/generate', [ModalityController::class, 'generate']);
 
+    Route::post('/modalities/{modality}/generate-smart', [ModalityController::class, 'generateSmart'])
+        ->name('lottery.modalities.generate-smart');
+
     Route::post('/modalities/{modality}/analyze', [ModalityController::class, 'analyze']);
+
+     Route::post('/modalities/{modality}/import-spreadsheet', [ModalityController::class, 'importSpreadsheet'])
+        ->name('lottery.modalities.import-spreadsheet');
 
     Route::get('/modalities/{modality}/play', [GameController::class, 'play'])
         ->name('lottery.modalities.play');

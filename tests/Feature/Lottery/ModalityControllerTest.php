@@ -5,6 +5,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use App\Models\Draw;
 use App\Models\DrawNumber;
 use Inertia\Testing\AssertableInertia as Assert;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
@@ -51,6 +52,91 @@ it('pode gerar números através do endpoint', function () {
         ]);
 });
 
+
+it('pode gerar jogos inteligentes por meio do endpoint', function () {
+    $quina = LotteryModality::factory()->quina()->create();
+
+    foreach (range(1, 12) as $contest) {
+        $draw = Draw::create([
+            'lottery_modality_id' => $quina->id,
+            'contest_number' => $contest,
+            'draw_date' => now()->subDays(12 - $contest)->toDateString(),
+            'metadata' => null,
+        ]);
+
+        foreach ([5, 11, 22, 49, 71] as $number) {
+            DrawNumber::create([
+                'draw_id' => $draw->id,
+                'number' => $number + (($contest - 1) % 5),
+            ]);
+        }
+    }
+
+    $response = $this->post("/lottery/modalities/{$quina->id}/generate-smart", [
+        'strategy' => 'balanced',
+        'games' => 3,
+        'candidate_pool' => 250,
+    ]);
+
+    $response->assertStatus(200)
+        ->assertJsonStructure([
+            'games' => [
+                '*' => [
+                    'numbers',
+                    'strategy',
+                    'weighted_score',
+                    'classification',
+                    'profile',
+                    'reason',
+                ],
+            ],
+        ]);
+});
+
+it('pode gerar jogos inteligentes por meio do motor externo', function () {
+    Http::fake([
+        'http://lottery_engine:8080/v1/generate-smart' => Http::response([
+            'games' => [
+                [
+                    'numbers' => [22, 41, 49, 53, 71],
+                    'weighted_score' => 88,
+                    'classification' => 'Excelente',
+                    'profile' => 'Quente',
+                    'reason' => 'Resposta do engine Go.',
+                ],
+            ],
+            'meta' => [
+                'generated_candidates' => 100,
+                'valid_candidates' => 20,
+                'elapsed_ms' => 15,
+            ],
+        ], 200),
+    ]);
+
+    $quina = LotteryModality::factory()->quina()->create();
+
+    $response = $this->postJson("/lottery/modalities/{$quina->id}/generate-smart", [
+        'strategy' => 'hot',
+        'games' => 1,
+        'candidate_pool' => 1000,
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('games.0.numbers', [22, 41, 49, 53, 71])
+        ->assertJsonPath('games.0.weighted_score', 88);
+});
+
+it('retorna 422 ao tentar gerar jogos inteligentes com estratégia inválida', function () {
+    $quina = LotteryModality::factory()->quina()->create();
+
+    $response = $this->post("/lottery/modalities/{$quina->id}/generate-smart", [
+        'strategy' => 'ice',
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonStructure(['message']);
+});
+
 it('pode analisar números através do endpoint', function () {
     $quina = LotteryModality::factory()->quina()->create();
 
@@ -67,12 +153,6 @@ it('pode analisar números através do endpoint', function () {
             'average_delay',
             'top_frequency_hits',
             'top_delay_hits',
-            'score' => [
-                'value',
-                'label',
-                'profile',
-                'breakdown',
-            ],
         ]);
 });
 
@@ -92,18 +172,6 @@ it('pode analisar números com comparação histórica por meio do ponto final.'
             'average_delay',
             'top_frequency_hits',
             'top_delay_hits',
-            'score' => [
-                'value',
-                'label',
-                'profile',
-                'breakdown' => [
-                    'historical_alignment',
-                    'frequency_strength',
-                    'delay_balance',
-                    'pattern_balance',
-                    'hot_cold_mix',
-                ],
-            ],
             'historical_averages' => [
                 'sum',
                 'even_count',

@@ -12,10 +12,13 @@ use App\Services\Lottery\CombinationGeneratorService;
 use App\Services\Lottery\CombinationHistoryService;
 use App\Services\Lottery\DelayAnalysisService;
 use App\Services\Lottery\StatisticsService;
+use App\Services\Lottery\Importers\QuinaSpreadsheetImporter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Illuminate\Http\RedirectResponse;
 use InvalidArgumentException;
+use App\Services\Lottery\SmartGameGeneratorGatewayService;
 
 class ModalityController extends Controller
 {
@@ -159,6 +162,28 @@ class ModalityController extends Controller
         }
     }
 
+    public function generateSmart(
+        Request $request,
+        LotteryModality $modality,
+        SmartGameGeneratorGatewayService $generator
+    ): JsonResponse {
+        try {
+            $games = $generator->generate($modality, $request->all());
+
+            return response()->json([
+                'games' => $games,
+            ]);
+        } catch (InvalidArgumentException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Não foi possível gerar jogos inteligentes no motor externo.',
+            ], 500);
+        }
+    }
+
     public function analyze(
         Request $request,
         LotteryModality $modality,
@@ -181,10 +206,57 @@ class ModalityController extends Controller
         }
     }
 
+
+    public function importSpreadsheet(
+        Request $request,
+        LotteryModality $modality,
+        QuinaSpreadsheetImporter $quinaImporter
+    ): RedirectResponse {
+        $this->prepareLongRunningRequest();
+
+        $validated = $request->validate([
+            'spreadsheet' => ['required', 'file', 'mimes:xlsx,xls'],
+        ], [
+            'spreadsheet.required' => 'Selecione uma planilha para importar.',
+            'spreadsheet.file' => 'O arquivo enviado é inválido.',
+            'spreadsheet.mimes' => 'Envie uma planilha XLSX ou XLS.',
+        ]);
+
+        if ($modality->code !== 'quina') {
+            return back()->with('error', 'A importação manual de planilha está disponível apenas para a Quina neste momento.');
+        }
+
+        $uploadedFile = $validated['spreadsheet'];
+
+        try {
+            $result = $quinaImporter->import($uploadedFile->getRealPath(), $modality);
+
+            return back()->with([
+                'success' => sprintf(
+                    'Importação concluída: %d novos, %d já existentes, %d ignorados.',
+                    $result['imported'] ?? 0,
+                    $result['existing'] ?? ($result['updated'] ?? 0),
+                    $result['skipped'] ?? 0,
+                ),
+                'import_result' => [
+                    'imported' => $result['imported'] ?? 0,
+                    'existing' => $result['existing'] ?? ($result['updated'] ?? 0),
+                    'skipped' => $result['skipped'] ?? 0,
+                    'filename' => $uploadedFile->getClientOriginalName(),
+                ],
+            ]);
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Não foi possível importar a planilha informada.');
+        }
+    }
+
     public function syncResults(
         LotteryModality $modality,
         CaixaResultsSyncService $syncService
     ): \Illuminate\Http\RedirectResponse {
+        $this->prepareLongRunningRequest();
         try {
             $result = $syncService->sync($modality);
 
@@ -268,5 +340,17 @@ class ModalityController extends Controller
             ->delete();
 
         return back()->with('success', 'Histórico limpo com sucesso.');
+    }
+
+    protected function prepareLongRunningRequest(int $seconds = 300, string $memory = '512M'): void
+    {
+         if (function_exists('set_time_limit')) {
+            @set_time_limit($seconds);
+        }
+
+        if (function_exists('ini_set')) {
+            @ini_set('max_execution_time', (string) $seconds);
+            @ini_set('memory_limit', $memory);
+        }
     }
 }

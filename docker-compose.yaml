@@ -32,6 +32,34 @@ services:
     networks:
       - shared
 
+  lottery_engine:
+    build:
+      context: ../lottery-engine
+      dockerfile: ../docker/go/Dockerfile
+    container_name: loterias_engine
+    working_dir: /app
+    volumes:
+      - ../lottery-engine:/app
+    environment:
+      APP_ENV: local
+      ENGINE_PORT: 8080
+    ports:
+      - "8090:8080"
+    networks:
+      - shared
+
+  lottery_engine_test:
+    build:
+      context: ../lottery-engine
+      dockerfile: ../docker/go/Dockerfile
+      target: test
+    container_name: loterias_engine_test
+    working_dir: /app
+    volumes:
+      - ../lottery-engine:/app
+    networks:
+      - shared
+
 networks:
   shared:
     external: true

@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'lottery_engine' => [
+        'url' => env('LOTTERY_ENGINE_URL', 'http://lottery_engine:8080'),
+        'timeout' => (int) env('LOTTERY_ENGINE_TIMEOUT', 120),
+    ],
+
 ];

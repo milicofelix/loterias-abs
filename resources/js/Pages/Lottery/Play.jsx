@@ -14,6 +14,10 @@ export default function Play({ modality, prefilledNumbers = [] }) {
     const [loadingGenerate, setLoadingGenerate] = useState(false);
     const [loadingAnalyze, setLoadingAnalyze] = useState(false);
     const [error, setError] = useState('');
+    const [smartStrategy, setSmartStrategy] = useState('balanced');
+    const [smartGamesCount, setSmartGamesCount] = useState(5);
+    const [loadingSmartGenerate, setLoadingSmartGenerate] = useState(false);
+    const [smartGames, setSmartGames] = useState([]);
 
     const quinaBlue = '#0c5a96';
     const quinaBall = '#0f4c81';
@@ -78,41 +82,6 @@ export default function Play({ modality, prefilledNumbers = [] }) {
     async function handleAnalyzeManual() {
         await analyzeNumbers(parsedManualNumbers, 'manual');
     }
-
-
-    function scoreTone(scoreValue) {
-        if (scoreValue >= 85) {
-            return {
-                bg: '#ecfdf3',
-                border: '#abefc6',
-                text: '#067647',
-            };
-        }
-
-        if (scoreValue >= 70) {
-            return {
-                bg: '#eff8ff',
-                border: '#b2ddff',
-                text: '#175cd3',
-            };
-        }
-
-        if (scoreValue >= 55) {
-            return {
-                bg: '#fffaeb',
-                border: '#fedf89',
-                text: '#b54708',
-            };
-        }
-
-        return {
-            bg: '#fef3f2',
-            border: '#fecdca',
-            text: '#b42318',
-        };
-    }
-
-    const scoreStyle = scoreTone(Number(analysis?.score?.value || 0));
 
     return (
         <div className="max-w-6xl mx-auto p-6 space-y-6">
@@ -180,6 +149,62 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                     >
                         {loadingGenerate ? 'Gerando...' : 'Gerar jogo'}
                     </button>
+
+                    <div className="pt-4 border-t space-y-3">
+                        <h3 className="font-semibold text-slate-700">Gerador inteligente</h3>
+
+                        <div>
+                            <label className="block text-sm mb-1">Estratégia</label>
+                            <select
+                                value={smartStrategy}
+                                onChange={(e) => setSmartStrategy(e.target.value)}
+                                className="w-full rounded-xl border px-3 py-2"
+                            >
+                                <option value="balanced">Equilibrado</option>
+                                <option value="hot">Quente</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm mb-1">Quantidade de jogos</label>
+                            <input
+                                type="number"
+                                min={1}
+                                max={10}
+                                value={smartGamesCount}
+                                onChange={(e) => setSmartGamesCount(Number(e.target.value))}
+                                className="w-full rounded-xl border px-3 py-2"
+                            />
+                        </div>
+
+                        <button
+                            onClick={async () => {
+                                setLoadingSmartGenerate(true);
+                                setError('');
+
+                                try {
+                                    const response = await axios.post(
+                                        `/lottery/modalities/${modality.id}/generate-smart`,
+                                        {
+                                            strategy: smartStrategy,
+                                            games: smartGamesCount,
+                                        }
+                                    );
+
+                                    setSmartGames(response.data.games || []);
+                                } catch (err) {
+                                    setSmartGames([]);
+                                    setError(err?.response?.data?.message || 'Erro ao gerar jogos inteligentes.');
+                                } finally {
+                                    setLoadingSmartGenerate(false);
+                                }
+                            }}
+                            disabled={loadingSmartGenerate}
+                            className="px-4 py-2 rounded-xl border"
+                        >
+                            {loadingSmartGenerate ? 'Gerando inteligentes...' : 'Gerar jogos inteligentes'}
+                        </button>
+                    </div>
                 </section>
 
                 <section className="p-5 rounded-2xl border bg-white space-y-4">
@@ -209,6 +234,75 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                     </button>
                 </section>
             </div>
+
+
+            {smartGames.length > 0 ? (
+                <section className="p-5 rounded-2xl border bg-white space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                        <h2 style={{ color: quinaBlue, fontSize: 24, fontWeight: 700 }}>
+                            Jogos inteligentes sugeridos
+                        </h2>
+                        <span className="text-sm text-slate-500">
+                            Estratégia: {smartStrategy === 'hot' ? 'Quente' : 'Equilibrado'}
+                        </span>
+                    </div>
+
+                    <div className="grid lg:grid-cols-2 gap-4">
+                        {smartGames.map((game, index) => (
+                            <div key={`${game.numbers.join('-')}-${index}`} className="rounded-2xl border p-4 space-y-3">
+                                <div className="flex flex-wrap gap-2">
+                                    {game.numbers.map((number) => (
+                                        <div
+                                            key={number}
+                                            style={{
+                                                width: 42,
+                                                height: 42,
+                                                borderRadius: '9999px',
+                                                backgroundColor: quinaBall,
+                                                color: '#fff',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontWeight: 700,
+                                            }}
+                                        >
+                                            {String(number).padStart(2, '0')}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                    <div>Score: <strong>{game.weighted_score}</strong></div>
+                                    <div>Perfil: <strong>{game.profile}</strong></div>
+                                    <div>Classificação: <strong>{game.classification}</strong></div>
+                                    <div>Frequentes: <strong>{game.top_frequency_hits}</strong></div>
+                                </div>
+
+                                <p className="text-sm text-slate-600">{game.reason}</p>
+
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        className="px-3 py-2 rounded-xl border"
+                                        onClick={() => {
+                                            setNumbers(game.numbers);
+                                            setManualNumbers(game.numbers.join(', '));
+                                        }}
+                                    >
+                                        Usar esta combinação
+                                    </button>
+
+                                    <button
+                                        className="px-3 py-2 rounded-xl border"
+                                        onClick={() => analyzeNumbers(game.numbers, 'generated')}
+                                    >
+                                        Analisar agora
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            ) : null}
 
             <section className="p-5 rounded-2xl border bg-white space-y-4">
                 <h2 style={{ color: quinaBlue, fontSize: 24, fontWeight: 700 }}>
@@ -246,56 +340,6 @@ export default function Play({ modality, prefilledNumbers = [] }) {
 
             {analysis ? (
                 <div className="grid lg:grid-cols-2 gap-6">
-                    <section className="p-5 rounded-2xl border bg-white space-y-4 lg:col-span-2">
-                        <h2 style={{ color: quinaBlue, fontSize: 24, fontWeight: 700 }}>
-                            Score do jogo
-                        </h2>
-
-                        <div
-                            className="rounded-2xl p-5 border"
-                            style={{
-                                backgroundColor: scoreStyle.bg,
-                                borderColor: scoreStyle.border,
-                            }}
-                        >
-                            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-                                <div>
-                                    <div className="text-sm font-semibold uppercase tracking-wide" style={{ color: scoreStyle.text }}>
-                                        {analysis.score?.label}
-                                    </div>
-                                    <div style={{ color: scoreStyle.text, fontSize: 34, fontWeight: 800 }}>
-                                        {analysis.score?.value}/100
-                                    </div>
-                                    <div className="text-slate-600">
-                                        Perfil estimado: <strong>{analysis.score?.profile}</strong>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 w-full md:w-auto">
-                                    <div className="rounded-xl bg-white/80 border px-3 py-2" style={{ borderColor: scoreStyle.border }}>
-                                        <div className="text-xs text-slate-500">Histórico</div>
-                                        <div className="font-bold">{analysis.score?.breakdown?.historical_alignment}</div>
-                                    </div>
-                                    <div className="rounded-xl bg-white/80 border px-3 py-2" style={{ borderColor: scoreStyle.border }}>
-                                        <div className="text-xs text-slate-500">Frequência</div>
-                                        <div className="font-bold">{analysis.score?.breakdown?.frequency_strength}</div>
-                                    </div>
-                                    <div className="rounded-xl bg-white/80 border px-3 py-2" style={{ borderColor: scoreStyle.border }}>
-                                        <div className="text-xs text-slate-500">Atraso</div>
-                                        <div className="font-bold">{analysis.score?.breakdown?.delay_balance}</div>
-                                    </div>
-                                    <div className="rounded-xl bg-white/80 border px-3 py-2" style={{ borderColor: scoreStyle.border }}>
-                                        <div className="text-xs text-slate-500">Padrão</div>
-                                        <div className="font-bold">{analysis.score?.breakdown?.pattern_balance}</div>
-                                    </div>
-                                    <div className="rounded-xl bg-white/80 border px-3 py-2" style={{ borderColor: scoreStyle.border }}>
-                                        <div className="text-xs text-slate-500">Mix</div>
-                                        <div className="font-bold">{analysis.score?.breakdown?.hot_cold_mix}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
                     <section className="p-5 rounded-2xl border bg-white space-y-3">
                         <h2 style={{ color: quinaBlue, fontSize: 24, fontWeight: 700 }}>
                             Resumo da combinação
