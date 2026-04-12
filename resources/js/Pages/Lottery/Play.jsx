@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Link } from '@inertiajs/react';
 
-export default function Play({ modality, prefilledNumbers = [] }) {
+export default function Play({ modality, prefilledNumbers = [], historyItem = null, latestDraw = null }) {
     const [count, setCount] = useState(
         prefilledNumbers.length > 0 ? prefilledNumbers.length : modality.bet_min_count
     );
@@ -13,14 +13,23 @@ export default function Play({ modality, prefilledNumbers = [] }) {
     const [analysis, setAnalysis] = useState(null);
     const [loadingGenerate, setLoadingGenerate] = useState(false);
     const [loadingAnalyze, setLoadingAnalyze] = useState(false);
+    const [loadingRegisterBet, setLoadingRegisterBet] = useState(false);
     const [error, setError] = useState('');
+    const [successMessage, setSuccessMessage] = useState('');
     const [smartStrategy, setSmartStrategy] = useState('balanced');
     const [smartGamesCount, setSmartGamesCount] = useState(5);
     const [loadingSmartGenerate, setLoadingSmartGenerate] = useState(false);
     const [smartGames, setSmartGames] = useState([]);
+    const [currentSource, setCurrentSource] = useState(
+        historyItem?.source || (prefilledNumbers.length > 0 ? 'manual' : 'manual')
+    );
+    const [currentHistoryId, setCurrentHistoryId] = useState(historyItem?.id || null);
+    const [betContestNumber, setBetContestNumber] = useState(historyItem?.bet_contest_number || null);
+    const [betResultSnapshot, setBetResultSnapshot] = useState(historyItem?.bet_result_snapshot || null);
 
     const quinaBlue = '#0c5a96';
     const quinaBall = '#0f4c81';
+    const quinaBorder = '#d9e1ea';
 
     const parsedManualNumbers = useMemo(() => {
         return manualNumbers
@@ -33,7 +42,7 @@ export default function Play({ modality, prefilledNumbers = [] }) {
 
     useEffect(() => {
         if (prefilledNumbers.length > 0) {
-            analyzeNumbers(prefilledNumbers, 'manual');
+            analyzeNumbers(prefilledNumbers, historyItem?.source || 'manual');
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -41,6 +50,7 @@ export default function Play({ modality, prefilledNumbers = [] }) {
     async function handleGenerate() {
         setLoadingGenerate(true);
         setError('');
+        setSuccessMessage('');
 
         try {
             const response = await axios.post(
@@ -51,6 +61,11 @@ export default function Play({ modality, prefilledNumbers = [] }) {
             const generatedNumbers = response.data.numbers || [];
 
             setNumbers(generatedNumbers);
+            setManualNumbers(generatedNumbers.join(', '));
+            setCurrentSource('generated');
+            setCurrentHistoryId(null);
+            setBetContestNumber(null);
+            setBetResultSnapshot(null);
             await analyzeNumbers(generatedNumbers, 'generated');
         } catch (err) {
             setError(err?.response?.data?.message || 'Erro ao gerar jogo.');
@@ -62,6 +77,7 @@ export default function Play({ modality, prefilledNumbers = [] }) {
     async function analyzeNumbers(targetNumbers, source = 'manual') {
         setLoadingAnalyze(true);
         setError('');
+        setSuccessMessage('');
 
         try {
             const response = await axios.post(
@@ -71,16 +87,63 @@ export default function Play({ modality, prefilledNumbers = [] }) {
 
             setAnalysis(response.data);
             setNumbers(targetNumbers);
+            setManualNumbers(targetNumbers.join(', '));
+            setCurrentSource(source);
+            setCurrentHistoryId(response.data.history_item_id || null);
+            setBetContestNumber(response.data.bet_contest_number || null);
+            setBetResultSnapshot(null);
+            return response.data;
         } catch (err) {
             setAnalysis(null);
             setError(err?.response?.data?.message || 'Erro ao analisar jogo.');
+            return null;
         } finally {
             setLoadingAnalyze(false);
         }
     }
 
     async function handleAnalyzeManual() {
+        setCurrentSource('manual');
+        setCurrentHistoryId(null);
+        setBetContestNumber(null);
+        setBetResultSnapshot(null);
         await analyzeNumbers(parsedManualNumbers, 'manual');
+    }
+
+    async function handleRegisterBet() {
+        setLoadingRegisterBet(true);
+        setError('');
+        setSuccessMessage('');
+
+        try {
+            let targetHistoryId = currentHistoryId;
+
+            if (!targetHistoryId) {
+                const analysisResponse = await analyzeNumbers(numbers, currentSource || 'manual');
+                targetHistoryId = analysisResponse?.history_item_id || null;
+            }
+
+            if (!targetHistoryId) {
+                throw new Error('Analise a combinação antes de registrar a aposta.');
+            }
+
+            const response = await axios.post(
+                `/lottery/modalities/${modality.id}/combination-history/${targetHistoryId}/register-bet`
+            );
+
+            setCurrentHistoryId(response.data.item?.id || targetHistoryId);
+            setBetContestNumber(response.data.item?.bet_contest_number || null);
+            setBetResultSnapshot(response.data.item?.bet_result_snapshot || null);
+            setSuccessMessage(response.data.message || 'Aposta registrada com sucesso.');
+        } catch (err) {
+            setError(
+                err?.response?.data?.message ||
+                err?.message ||
+                'Não foi possível registrar a aposta.'
+            );
+        } finally {
+            setLoadingRegisterBet(false);
+        }
     }
 
     return (
@@ -111,9 +174,88 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                 </p>
             </div>
 
+            {latestDraw ? (
+                <section
+                    className="p-5 rounded-2xl border bg-white space-y-4"
+                    style={{ borderColor: quinaBorder }}
+                >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h2 style={{ color: quinaBlue, fontSize: 24, fontWeight: 700 }}>
+                                Concurso atual disponível
+                            </h2>
+                            <p className="text-slate-600 mt-1">
+                                Concurso {latestDraw.contest_number}
+                                {latestDraw.draw_date ? ` • resultado oficial de ${latestDraw.draw_date}` : ''}
+                            </p>
+                        </div>
+
+                        {betContestNumber ? (
+                            <Link
+                                href={`/lottery/modalities/${modality.id}/combination-history/${currentHistoryId}/check-bet`}
+                                className="px-4 py-3 rounded-xl border text-center font-semibold"
+                                style={{ borderColor: quinaBlue, color: quinaBlue }}
+                            >
+                                Conferir aposta
+                            </Link>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={handleRegisterBet}
+                                disabled={loadingRegisterBet || numbers.length === 0}
+                                className="px-4 py-3 rounded-xl text-center font-semibold"
+                                style={{
+                                    backgroundColor: quinaBlue,
+                                    color: '#fff',
+                                    opacity: loadingRegisterBet || numbers.length === 0 ? 0.7 : 1,
+                                }}
+                            >
+                                {loadingRegisterBet
+                                    ? 'Registrando aposta...'
+                                    : `Realizar aposta no concurso ${latestDraw.contest_number}`}
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                        {latestDraw.numbers.map((number) => (
+                            <div
+                                key={number}
+                                style={{
+                                    width: 42,
+                                    height: 42,
+                                    borderRadius: '9999px',
+                                    backgroundColor: quinaBall,
+                                    color: '#fff',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontWeight: 700,
+                                }}
+                            >
+                                {String(number).padStart(2, '0')}
+                            </div>
+                        ))}
+                    </div>
+
+                    {betContestNumber ? (
+                        <div className="rounded-xl border px-4 py-3 text-sm" style={{ borderColor: '#abefc6', backgroundColor: '#ecfdf3', color: '#067647' }}>
+                            Sua combinação atual está vinculada ao concurso {betContestNumber}.
+                            {betResultSnapshot?.hit_label ? ` Última conferência: ${betResultSnapshot.hit_label}.` : ''}
+                        </div>
+                    ) : null}
+                </section>
+            ) : null}
+
             {error ? (
                 <div className="p-3 rounded border border-red-300 bg-red-50 text-red-700">
                     {error}
+                </div>
+            ) : null}
+
+            {successMessage ? (
+                <div className="p-3 rounded border border-green-300 bg-green-50 text-green-700">
+                    {successMessage}
                 </div>
             ) : null}
 
@@ -181,6 +323,7 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                             onClick={async () => {
                                 setLoadingSmartGenerate(true);
                                 setError('');
+                                setSuccessMessage('');
 
                                 try {
                                     const response = await axios.post(
@@ -219,7 +362,13 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                         <input
                             type="text"
                             value={manualNumbers}
-                            onChange={(e) => setManualNumbers(e.target.value)}
+                            onChange={(e) => {
+                                setManualNumbers(e.target.value);
+                                setCurrentSource('manual');
+                                setCurrentHistoryId(null);
+                                setBetContestNumber(null);
+                                setBetResultSnapshot(null);
+                            }}
                             placeholder="Ex: 1, 7, 22, 33, 80"
                             className="w-full rounded-xl border px-3 py-2"
                         />
@@ -234,7 +383,6 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                     </button>
                 </section>
             </div>
-
 
             {smartGames.length > 0 ? (
                 <section className="p-5 rounded-2xl border bg-white space-y-4">
@@ -286,6 +434,11 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                                         onClick={() => {
                                             setNumbers(game.numbers);
                                             setManualNumbers(game.numbers.join(', '));
+                                            setCurrentSource('generated');
+                                            setCurrentHistoryId(null);
+                                            setBetContestNumber(null);
+                                            setBetResultSnapshot(null);
+                                            setSuccessMessage('');
                                         }}
                                     >
                                         Usar esta combinação
@@ -305,9 +458,41 @@ export default function Play({ modality, prefilledNumbers = [] }) {
             ) : null}
 
             <section className="p-5 rounded-2xl border bg-white space-y-4">
-                <h2 style={{ color: quinaBlue, fontSize: 24, fontWeight: 700 }}>
-                    Combinação atual
-                </h2>
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <h2 style={{ color: quinaBlue, fontSize: 24, fontWeight: 700 }}>
+                        Combinação atual
+                    </h2>
+
+                    <div className="flex flex-wrap gap-2">
+                        {betContestNumber && currentHistoryId ? (
+                            <Link
+                                href={`/lottery/modalities/${modality.id}/combination-history/${currentHistoryId}/check-bet`}
+                                className="px-4 py-2 rounded-xl border text-sm font-semibold"
+                                style={{ borderColor: quinaBlue, color: quinaBlue }}
+                            >
+                                Conferir jogo
+                            </Link>
+                        ) : null}
+
+                        <button
+                            type="button"
+                            onClick={handleRegisterBet}
+                            disabled={loadingRegisterBet || numbers.length === 0 || !latestDraw}
+                            className="px-4 py-2 rounded-xl text-sm font-semibold"
+                            style={{
+                                backgroundColor: quinaBlue,
+                                color: '#fff',
+                                opacity: loadingRegisterBet || numbers.length === 0 || !latestDraw ? 0.7 : 1,
+                            }}
+                        >
+                            {loadingRegisterBet
+                                ? 'Registrando...'
+                                : latestDraw
+                                    ? `Realizar aposta no concurso ${latestDraw.contest_number}`
+                                    : 'Realizar aposta'}
+                        </button>
+                    </div>
+                </div>
 
                 <div className="flex flex-wrap gap-3">
                     {numbers.length > 0 ? (
@@ -336,6 +521,12 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                         </span>
                     )}
                 </div>
+
+                {betContestNumber ? (
+                    <div className="rounded-xl border px-4 py-3 text-sm" style={{ borderColor: '#abefc6', backgroundColor: '#ecfdf3', color: '#067647' }}>
+                        A combinação atual foi vinculada ao concurso {betContestNumber}.
+                    </div>
+                ) : null}
             </section>
 
             {analysis ? (
@@ -518,108 +709,16 @@ export default function Play({ modality, prefilledNumbers = [] }) {
 
                             <div
                                 style={{
-                                    backgroundColor: '#f8fbff',
+                                    backgroundColor: '#eef6ff',
                                     border: '1px solid #d6e8fb',
                                     borderRadius: 16,
                                     padding: 16,
                                 }}
                             >
-                                <div className="text-sm text-slate-500 mb-2">
-                                    {analysis.agent.name} · v{analysis.agent.version}
-                                </div>
-                                <div style={{ color: quinaBlue, fontSize: 18, fontWeight: 700 }}>
+                                <div style={{ color: quinaBlue, fontSize: 20, fontWeight: 700 }}>
                                     {analysis.agent.summary}
                                 </div>
                             </div>
-
-                            <div className="grid md:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <h3 className="font-bold text-slate-700">Pontos fortes</h3>
-
-                                    {analysis.agent.strengths?.length ? (
-                                        analysis.agent.strengths.map((item, index) => (
-                                            <div
-                                                key={index}
-                                                className="rounded-xl border px-4 py-3 bg-emerald-50 border-emerald-200 text-emerald-900"
-                                            >
-                                                {item}
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <div className="rounded-xl border px-4 py-3 text-slate-500">
-                                            Nenhum ponto forte destacado nesta leitura.
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="space-y-2">
-                                    <h3 className="font-bold text-slate-700">Pontos de atenção</h3>
-
-                                    {analysis.agent.warnings?.length ? (
-                                        analysis.agent.warnings.map((item, index) => (
-                                            <div
-                                                key={index}
-                                                className="rounded-xl border px-4 py-3 bg-amber-50 border-amber-200 text-amber-900"
-                                            >
-                                                {item}
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <div className="rounded-xl border px-4 py-3 text-slate-500">
-                                            Nenhum ponto de atenção destacado nesta leitura.
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </section>
-                    ) : null}
-
-                    {analysis?.profile_comparison ? (
-                        <section className="p-5 rounded-2xl border bg-white space-y-4 lg:col-span-2">
-                            <h2 style={{ color: quinaBlue, fontSize: 24, fontWeight: 700 }}>
-                                Agente comparador de perfil
-                            </h2>
-
-                            <div
-                                style={{
-                                    backgroundColor: '#f8fbff',
-                                    border: '1px solid #d6e8fb',
-                                    borderRadius: 16,
-                                    padding: 16,
-                                }}
-                            >
-                                <div className="text-sm text-slate-500 mb-2">
-                                    {analysis.profile_comparison.name} · v{analysis.profile_comparison.version}
-                                </div>
-
-                                <div style={{ color: quinaBlue, fontSize: 18, fontWeight: 700 }}>
-                                    {analysis.profile_comparison.summary}
-                                </div>
-                            </div>
-
-                            {analysis.profile_comparison.highlights?.length ? (
-                                <div className="grid md:grid-cols-2 gap-3">
-                                    {analysis.profile_comparison.highlights.map((item, index) => (
-                                        <div
-                                            key={index}
-                                            className="rounded-xl border px-4 py-3 bg-slate-50 text-slate-700"
-                                        >
-                                            {item}
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : null}
-
-                            {analysis.profile_comparison.winner ? (
-                                <div className="rounded-xl border px-4 py-4 bg-emerald-50 border-emerald-200 text-emerald-900">
-                                    <strong>Resultado da comparação:</strong>{' '}
-                                    {analysis.profile_comparison.winner.reason}
-                                </div>
-                            ) : (
-                                <div className="rounded-xl border px-4 py-4 text-slate-600">
-                                    Comparação individual da combinação com base no perfil histórico.
-                                </div>
-                            )}
                         </section>
                     ) : null}
                 </div>

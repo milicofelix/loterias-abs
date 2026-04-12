@@ -4,6 +4,8 @@ use App\Models\LotteryModality;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use App\Models\CombinationHistory;
+use App\Models\Draw;
+use App\Models\DrawNumber;
 
 uses(RefreshDatabase::class);
 

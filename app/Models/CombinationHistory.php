@@ -15,12 +15,19 @@ class CombinationHistory extends Model
         'lottery_modality_id',
         'numbers',
         'source',
+        'bet_contest_number',
+        'bet_registered_at',
         'analysis_snapshot',
+        'bet_result_snapshot',
+        'bet_checked_at',
     ];
 
     protected $casts = [
         'numbers' => 'array',
         'analysis_snapshot' => 'array',
+        'bet_result_snapshot' => 'array',
+        'bet_registered_at' => 'datetime',
+        'bet_checked_at' => 'datetime',
     ];
 
     public function modality(): BelongsTo

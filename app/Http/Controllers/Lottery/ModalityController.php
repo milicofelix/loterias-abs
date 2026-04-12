@@ -196,9 +196,13 @@ class ModalityController extends Controller
 
             $analysis = $analysisAgent->analyze($modality, $numbers);
 
-            $historyService->store($modality, $numbers, $source, $analysis);
+            $historyItem = $historyService->store($modality, $numbers, $source, $analysis);
 
-            return response()->json($analysis);
+            return response()->json(array_merge($analysis, [
+                'history_item_id' => $historyItem->id,
+                'bet_contest_number' => $historyItem->bet_contest_number,
+                'bet_registered_at' => $historyItem->bet_registered_at?->toIso8601String(),
+            ]));
         } catch (InvalidArgumentException $e) {
             return response()->json([
                 'message' => $e->getMessage(),
@@ -307,15 +311,22 @@ class ModalityController extends Controller
                     'id' => $item->id,
                     'numbers' => $item->numbers,
                     'source' => $item->source,
+                    'bet_contest_number' => $item->bet_contest_number,
+                    'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
+                    'bet_checked_at' => $item->bet_checked_at?->format('d/m/Y H:i'),
+                    'bet_result_snapshot' => $item->bet_result_snapshot,
                     'analysis_snapshot' => $item->analysis_snapshot,
                     'created_at' => $item->created_at?->format('d/m/Y H:i'),
                 ];
             })
             ->withQueryString();
 
+        $latestContestNumber = $modality->draws()->max('contest_number');
+
         return inertia('Lottery/CombinationHistory', [
             'modality' => $modality,
             'items' => $items,
+            'latestContestNumber' => $latestContestNumber,
             'filters' => [
                 'source' => $source,
             ],
@@ -340,6 +351,124 @@ class ModalityController extends Controller
             ->delete();
 
         return back()->with('success', 'Histórico limpo com sucesso.');
+    }
+
+
+    public function registerCombinationBet(
+        Request $request,
+        LotteryModality $modality,
+        \App\Models\CombinationHistory $item
+    ) {
+        abort_unless($item->lottery_modality_id === $modality->id, 404);
+
+        $latestDraw = $modality->draws()
+            ->with('numbers')
+            ->orderByDesc('contest_number')
+            ->first();
+
+        if (! $latestDraw) {
+            $message = 'Ainda não existe resultado oficial cadastrado para vincular a aposta.';
+
+            if ($request->expectsJson()) {
+                return response()->json(['message' => $message], 422);
+            }
+
+            return back()->with('error', $message);
+        }
+
+        $item->forceFill([
+            'bet_contest_number' => $latestDraw->contest_number,
+            'bet_registered_at' => now(),
+            'bet_result_snapshot' => null,
+            'bet_checked_at' => null,
+        ])->save();
+
+        $payload = [
+            'message' => sprintf('Aposta vinculada ao concurso %s com sucesso.', $latestDraw->contest_number),
+            'item' => [
+                'id' => $item->id,
+                'bet_contest_number' => $item->bet_contest_number,
+                'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
+                'bet_checked_at' => $item->bet_checked_at?->format('d/m/Y H:i'),
+                'bet_result_snapshot' => $item->bet_result_snapshot,
+            ],
+        ];
+
+        if ($request->expectsJson()) {
+            return response()->json($payload);
+        }
+
+        return back()->with('success', $payload['message']);
+    }
+
+    public function checkCombinationBet(
+        LotteryModality $modality,
+        \App\Models\CombinationHistory $item
+    ) {
+        abort_unless($item->lottery_modality_id === $modality->id, 404);
+
+        $contestNumber = $item->bet_contest_number;
+
+        $draw = null;
+
+        if ($contestNumber) {
+            $draw = $modality->draws()
+                ->with('numbers')
+                ->where('contest_number', $contestNumber)
+                ->first();
+        }
+
+        $officialNumbers = $draw
+            ? $draw->numbers->pluck('number')->map(fn ($number) => (int) $number)->sort()->values()->all()
+            : [];
+
+        $betNumbers = collect($item->numbers)
+            ->map(fn ($number) => (int) $number)
+            ->sort()
+            ->values()
+            ->all();
+
+        $hits = array_values(array_intersect($betNumbers, $officialNumbers));
+
+        $resultSnapshot = null;
+
+        if ($draw) {
+            $resultSnapshot = [
+                'contest_number' => $draw->contest_number,
+                'draw_date' => $draw->draw_date?->format('d/m/Y'),
+                'official_numbers' => $officialNumbers,
+                'user_numbers' => $betNumbers,
+                'hits' => array_map('intval', $hits),
+                'hit_count' => count($hits),
+                'hit_label' => match (count($hits)) {
+                    0 => 'nenhum',
+                    1 => '1 número',
+                    default => count($hits) . ' números',
+                },
+            ];
+
+            $item->forceFill([
+                'bet_result_snapshot' => $resultSnapshot,
+                'bet_checked_at' => now(),
+            ])->save();
+        }
+
+        $latestContestNumber = $modality->draws()->max('contest_number');
+
+        return inertia('Lottery/CheckBet', [
+            'modality' => $modality,
+            'historyItem' => [
+                'id' => $item->id,
+                'numbers' => $betNumbers,
+                'source' => $item->source,
+                'created_at' => $item->created_at?->format('d/m/Y H:i'),
+                'bet_contest_number' => $item->bet_contest_number,
+                'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
+                'bet_checked_at' => $item->bet_checked_at?->format('d/m/Y H:i'),
+            ],
+            'latestContestNumber' => $latestContestNumber,
+            'officialResult' => $resultSnapshot,
+        ]);
     }
 
     protected function prepareLongRunningRequest(int $seconds = 300, string $memory = '512M'): void

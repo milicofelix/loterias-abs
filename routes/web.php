@@ -57,4 +57,10 @@ Route::prefix('lottery')->group(function () {
     
      Route::post('/modalities/{modality}/sync-results', [ModalityController::class, 'syncResults'])
         ->name('lottery.modalities.sync-results');
+
+    Route::post('/modalities/{modality}/combination-history/{item}/register-bet', [ModalityController::class, 'registerCombinationBet'])
+    ->name('lottery.combination-history.register-bet');
+
+    Route::get('/modalities/{modality}/combination-history/{item}/check-bet', [ModalityController::class, 'checkCombinationBet'])
+        ->name('lottery.combination-history.check-bet');
 });
