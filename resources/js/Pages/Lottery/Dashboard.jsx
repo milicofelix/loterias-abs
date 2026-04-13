@@ -1,1157 +1,229 @@
-import { Link, router, useForm, usePage } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
-import {
-    BarChart,
-    Bar,
-    CartesianGrid,
-    XAxis,
-    YAxis,
-    Tooltip,
-    ResponsiveContainer,
-} from 'recharts';
+import { Link, router, usePage } from '@inertiajs/react';
+import { useMemo } from 'react';
+
+function NumberBall({ number, active = true }) {
+    return (
+        <div
+            style={{
+                width: 46,
+                height: 46,
+                borderRadius: '9999px',
+                backgroundColor: active ? '#0c5a96' : '#fff',
+                border: active ? 'none' : '1px solid #d0d5dd',
+                color: active ? '#fff' : '#344054',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 700,
+            }}
+        >
+            {String(number).padStart(2, '0')}
+        </div>
+    );
+}
 
 export default function Dashboard({
     modality,
-    frequencies,
-    delays,
-    frequenciesLast10,
-    frequenciesLast20,
-    frequenciesLast50,
-    delaysLast10,
-    delaysLast20,
-    delaysLast50,
+    frequencies = {},
+    delays = {},
     recentDraws = [],
     totalDraws = 0,
     latestContestNumber = null,
     dashboardNarrative = null,
     latestDrawExplanation = null,
+    authRequiredActions = {},
 }) {
-    const [selectedWindow, setSelectedWindow] = useState('all');
-    const { flash = {} } = usePage().props;
-    const importForm = useForm({ spreadsheet: null });
+    const { flash = {}, auth = {} } = usePage().props;
 
-    const selectedFrequencies = useMemo(() => {
-        switch (selectedWindow) {
-            case '10':
-                return frequenciesLast10;
-            case '20':
-                return frequenciesLast20;
-            case '50':
-                return frequenciesLast50;
-            default:
-                return frequencies;
-        }
-    }, [selectedWindow, frequencies, frequenciesLast10, frequenciesLast20, frequenciesLast50]);
+    const latestDraw = recentDraws[0] || null;
 
-    const selectedDelays = useMemo(() => {
-        switch (selectedWindow) {
-            case '10':
-                return delaysLast10;
-            case '20':
-                return delaysLast20;
-            case '50':
-                return delaysLast50;
-            default:
-                return delays;
-        }
-    }, [selectedWindow, delays, delaysLast10, delaysLast20, delaysLast50]);
+    const topFrequencies = useMemo(() => {
+        return Object.entries(frequencies || {})
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10);
+    }, [frequencies]);
 
-    const topFrequencies = Object.entries(selectedFrequencies)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10);
-
-    const topDelays = Object.entries(selectedDelays)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10);
-
-    const chartData = Object.entries(selectedFrequencies).map(([number, total]) => ({
-        number: String(number).padStart(2, '0'),
-        total,
-    }));
-
-    const latestDraw = recentDraws.length > 0 ? recentDraws[0] : null;
-
-
-    const submitImport = (event) => {
-        event.preventDefault();
-
-        importForm.post(`/lottery/modalities/${modality.id}/import-spreadsheet`, {
-            preserveScroll: true,
-            forceFormData: true,
-            onSuccess: () => importForm.reset('spreadsheet'),
-        });
-    };
-
-    const startSync = () => {
-        router.post(`/lottery/modalities/${modality.id}/sync-results`, {}, {
-            preserveScroll: true,
-        });
-    };
+    const topDelays = useMemo(() => {
+        return Object.entries(delays || {})
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10);
+    }, [delays]);
 
     const quinaBlue = '#0c5a96';
-    const quinaBlueDark = '#0b3e6a';
-    const quinaBall = '#0f4c81';
-    const quinaBg = '#eef3f8';
-    const quinaCard = '#ffffff';
     const quinaBorder = '#d9e1ea';
     const quinaMuted = '#667085';
+    const quinaBg = '#eef3f8';
 
     return (
         <div className="min-h-screen" style={{ backgroundColor: quinaBg }}>
             <div className="max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-10 space-y-8">
                 <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                        <div
-                            style={{
-                                color: quinaBlue,
-                                fontSize: 18,
-                                fontWeight: 700,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.18em',
-                            }}
-                        >
-                            Resultado
+                        <div style={{ color: quinaBlue, fontSize: 18, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em' }}>
+                            Resultado oficial
                         </div>
-
                         <div className="flex flex-col gap-2 md:flex-row md:items-end md:gap-4 mt-2">
-                            <h1
-                                style={{
-                                    color: quinaBlue,
-                                    fontSize: 'clamp(2.5rem, 5vw, 4rem)',
-                                    fontWeight: 800,
-                                    lineHeight: 1,
-                                }}
-                            >
+                            <h1 style={{ color: quinaBlue, fontSize: 'clamp(2.5rem, 5vw, 4rem)', fontWeight: 800, lineHeight: 1 }}>
                                 {modality.name}
                             </h1>
-
-                            <div
-                                style={{
-                                    color: quinaMuted,
-                                    fontSize: 'clamp(1.2rem, 2vw, 2rem)',
-                                    fontWeight: 500,
-                                    lineHeight: 1.1,
-                                }}
-                            >
+                            <div style={{ color: quinaMuted, fontSize: 'clamp(1.2rem, 2vw, 2rem)', fontWeight: 500, lineHeight: 1.1 }}>
                                 {latestContestNumber ? `Concurso ${latestContestNumber}` : ''}
                             </div>
                         </div>
-
-                        <p
-                            className="mt-3"
-                            style={{
-                                color: quinaMuted,
-                                fontSize: 20,
-                                fontWeight: 500,
-                            }}
-                        >
-                            Modalidade: {modality.min_number} a {modality.max_number} • Sorteio de {modality.draw_count} números
+                        <p className="mt-3" style={{ color: quinaMuted, fontSize: 18, fontWeight: 500 }}>
+                            Resultados públicos. Para apostar, salvar combinações e usar análises inteligentes, entre na sua conta.
                         </p>
                     </div>
 
                     <div className="flex gap-3 flex-wrap">
-                        {modality.code === 'quina' ? (
-                            <button
-                                type="button"
-                                onClick={() => router.post(`/lottery/modalities/${modality.id}/sync-results`)}
-                                className="transition hover:opacity-95"
-                                style={{
-                                    backgroundColor: '#fff',
-                                    color: quinaBlue,
-                                    padding: '14px 22px',
-                                    borderRadius: 16,
-                                    fontWeight: 700,
-                                    border: `1px solid ${quinaBorder}`,
-                                }}
-                            >
-                                Sincronizar da CAIXA
-                            </button>
-                        ) : null}
-
-                        <Link
-                            href={`/lottery/modalities/${modality.id}/play`}
-                            className="transition hover:opacity-95"
-                            style={{
-                                backgroundColor: quinaBlue,
-                                color: '#fff',
-                                padding: '14px 22px',
-                                borderRadius: 16,
-                                fontWeight: 700,
-                                boxShadow: '0 8px 24px rgba(12, 90, 150, 0.18)',
-                            }}
-                        >
-                            Gerar e analisar jogo
-                        </Link>
+                        {auth?.user ? (
+                            <>
+                                <Link href={`/lottery/modalities/${modality.id}/combination-history`} className="transition hover:opacity-95" style={{ backgroundColor: '#fff', color: quinaBlue, padding: '14px 22px', borderRadius: 16, fontWeight: 700, border: `1px solid ${quinaBorder}` }}>
+                                    Minha área
+                                </Link>
+                                <Link href={`/lottery/modalities/${modality.id}/play`} className="transition hover:opacity-95" style={{ backgroundColor: quinaBlue, color: '#fff', padding: '14px 22px', borderRadius: 16, fontWeight: 700 }}>
+                                    Gerar e analisar jogo
+                                </Link>
+                                <Link href="/logout" method="post" as="button" className="transition hover:opacity-95" style={{ backgroundColor: '#fff', color: quinaBlue, padding: '14px 22px', borderRadius: 16, fontWeight: 700, border: `1px solid ${quinaBorder}` }}>
+                                    Sair
+                                </Link>
+                            </>
+                        ) : (
+                            <>
+                                <Link href="/login" className="transition hover:opacity-95" style={{ backgroundColor: '#fff', color: quinaBlue, padding: '14px 22px', borderRadius: 16, fontWeight: 700, border: `1px solid ${quinaBorder}` }}>
+                                    Entrar
+                                </Link>
+                                <Link href="/register" className="transition hover:opacity-95" style={{ backgroundColor: '#fff', color: quinaBlue, padding: '14px 22px', borderRadius: 16, fontWeight: 700, border: `1px solid ${quinaBorder}` }}>
+                                    Criar conta
+                                </Link>
+                                <Link href={authRequiredActions.play ? '/login' : `/lottery/modalities/${modality.id}/play`} className="transition hover:opacity-95" style={{ backgroundColor: quinaBlue, color: '#fff', padding: '14px 22px', borderRadius: 16, fontWeight: 700 }}>
+                                    Entrar para apostar e analisar
+                                </Link>
+                            </>
+                        )}
                     </div>
                 </header>
 
-                {flash.success ? (
-                    <div
-                        style={{
-                            backgroundColor: '#ecfdf3',
-                            border: '1px solid #abefc6',
-                            color: '#067647',
-                            borderRadius: 20,
-                            padding: '16px 20px',
-                            fontWeight: 600,
-                        }}
-                    >
-                        {flash.success}
-                    </div>
-                ) : null}
+                {flash.success ? <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-emerald-700 font-semibold">{flash.success}</div> : null}
+                {flash.error ? <div className="rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-red-700 font-semibold">{flash.error}</div> : null}
 
-                {flash.error ? (
-                    <div
-                        style={{
-                            backgroundColor: '#fef3f2',
-                            border: '1px solid #fecdca',
-                            color: '#b42318',
-                            borderRadius: 20,
-                            padding: '16px 20px',
-                            fontWeight: 600,
-                        }}
-                    >
-                        {flash.error}
-                    </div>
-                ) : null}
-
-
-                <section
-                    className="grid gap-6 xl:grid-cols-[1.25fr_1fr]"
-                >
-                    <div
-                        style={{
-                            backgroundColor: quinaCard,
-                            border: `1px solid ${quinaBorder}`,
-                            borderRadius: 28,
-                            boxShadow: '0 8px 32px rgba(15, 76, 129, 0.06)',
-                            padding: 28,
-                        }}
-                    >
-                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+                    <div className="rounded-3xl border bg-white p-5 md:p-7" style={{ borderColor: quinaBorder }}>
+                        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                             <div>
-                                <div
-                                    style={{
-                                        color: quinaMuted,
-                                        fontSize: 15,
-                                        fontWeight: 700,
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.08em',
-                                    }}
-                                >
-                                    Importação manual
-                                </div>
-                                <h2
-                                    className="mt-2"
-                                    style={{
-                                        color: quinaBlue,
-                                        fontSize: 'clamp(1.6rem, 2.4vw, 2.1rem)',
-                                        fontWeight: 800,
-                                        lineHeight: 1.1,
-                                    }}
-                                >
-                                    Enviar planilha oficial da {modality.name}
-                                </h2>
-                                <p
-                                    className="mt-3 max-w-2xl"
-                                    style={{ color: quinaMuted, fontSize: 16, fontWeight: 500 }}
-                                >
-                                    Faça o upload manual do arquivo XLSX/XLS da CAIXA. O sistema importa apenas concursos novos e ignora os já existentes.
-                                </p>
+                                <h2 className="text-2xl font-extrabold" style={{ color: quinaBlue }}>Último resultado</h2>
+                                <p className="mt-1 text-slate-500">Concurso atual, números sorteados e visão pública do histórico.</p>
                             </div>
+                            <Link href={`/lottery/modalities/${modality.id}/history`} className="rounded-2xl border bg-white px-4 py-3 font-semibold" style={{ borderColor: quinaBorder }}>
+                                Ver histórico completo
+                            </Link>
                         </div>
 
-                        <form onSubmit={submitImport} className="mt-6 space-y-4">
-                            <div>
-                                <label
-                                    htmlFor="spreadsheet"
-                                    className="block mb-2"
-                                    style={{ color: quinaBlueDark, fontSize: 14, fontWeight: 700 }}
-                                >
-                                    Planilha dos sorteios
-                                </label>
-                                <input
-                                    id="spreadsheet"
-                                    type="file"
-                                    accept=".xlsx,.xls"
-                                    onChange={(event) => importForm.setData('spreadsheet', event.target.files?.[0] ?? null)}
-                                    className="block w-full rounded-2xl border bg-white px-4 py-3 text-sm file:mr-4 file:rounded-xl file:border-0 file:px-4 file:py-2 file:font-semibold"
-                                    style={{ borderColor: quinaBorder, color: quinaBlueDark }}
-                                />
-                                <p className="mt-2 text-sm" style={{ color: quinaMuted }}>
-                                    Formatos aceitos: XLSX e XLS.
-                                </p>
-                                {importForm.errors.spreadsheet ? (
-                                    <p className="mt-2 text-sm font-semibold text-red-600">{importForm.errors.spreadsheet}</p>
+                        {latestDraw ? (
+                            <div className="mt-6 rounded-3xl border p-5" style={{ borderColor: quinaBorder, backgroundColor: '#f8fbff' }}>
+                                <div className="text-lg font-semibold text-slate-700">Concurso {latestDraw.contest_number}</div>
+                                <div className="mt-1 text-sm text-slate-500">{latestDraw.draw_date || 'Data não informada'}</div>
+                                <div className="mt-5 flex flex-wrap gap-3">
+                                    {latestDraw.numbers.map((number) => <NumberBall key={number} number={number} />)}
+                                </div>
+                                {latestDrawExplanation ? (
+                                    <div className="mt-5 rounded-2xl border px-4 py-3 text-slate-600" style={{ borderColor: quinaBorder }}>
+                                        {typeof latestDrawExplanation === 'string' ? latestDrawExplanation : latestDrawExplanation.summary || latestDrawExplanation.headline || 'Explicação do último sorteio disponível.'}
+                                    </div>
                                 ) : null}
                             </div>
-
-                            <div className="flex gap-3 flex-wrap">
-                                <button
-                                    type="submit"
-                                    disabled={importForm.processing}
-                                    className="transition hover:opacity-95 disabled:opacity-60"
-                                    style={{
-                                        backgroundColor: quinaBlue,
-                                        color: '#fff',
-                                        padding: '12px 18px',
-                                        borderRadius: 16,
-                                        fontWeight: 700,
-                                        boxShadow: '0 8px 24px rgba(12, 90, 150, 0.18)',
-                                    }}
-                                >
-                                    {importForm.processing ? 'Importando planilha...' : 'Importar planilha manualmente'}
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={startSync}
-                                    className="transition hover:opacity-95"
-                                    style={{
-                                        backgroundColor: '#fff',
-                                        color: quinaBlue,
-                                        padding: '12px 18px',
-                                        borderRadius: 16,
-                                        fontWeight: 700,
-                                        border: `1px solid ${quinaBorder}`,
-                                    }}
-                                >
-                                    Sincronizar da CAIXA
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-
-                    <div
-                        style={{
-                            backgroundColor: quinaCard,
-                            border: `1px solid ${quinaBorder}`,
-                            borderRadius: 28,
-                            boxShadow: '0 8px 32px rgba(15, 76, 129, 0.06)',
-                            padding: 28,
-                        }}
-                    >
-                        <div
-                            style={{
-                                color: quinaMuted,
-                                fontSize: 15,
-                                fontWeight: 700,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.08em',
-                            }}
-                        >
-                            Retorno da importação
-                        </div>
-
-                        <h2
-                            className="mt-2"
-                            style={{
-                                color: quinaBlue,
-                                fontSize: 'clamp(1.5rem, 2.2vw, 2rem)',
-                                fontWeight: 800,
-                                lineHeight: 1.1,
-                            }}
-                        >
-                            Último processamento
-                        </h2>
-
-                        <div className="mt-5 space-y-3">
-                            {flash.success ? (
-                                <div className="rounded-2xl px-4 py-3" style={{ backgroundColor: '#e9f7ef', color: '#146c43', border: '1px solid #b7e4c7' }}>
-                                    {flash.success}
-                                </div>
-                            ) : null}
-
-                            {flash.error ? (
-                                <div className="rounded-2xl px-4 py-3" style={{ backgroundColor: '#fdecec', color: '#b42318', border: '1px solid #f5c2c0' }}>
-                                    {flash.error}
-                                </div>
-                            ) : null}
-                        </div>
-
-                        {flash.import_result ? (
-                            <div className="mt-5 space-y-4">
-                                <div className="text-sm" style={{ color: quinaMuted }}>
-                                    Arquivo: <span style={{ color: quinaBlueDark, fontWeight: 700 }}>{flash.import_result.filename}</span>
-                                </div>
-
-                                <div className="grid grid-cols-3 gap-3">
-                                    <ResultStatCard label="Importados" value={flash.import_result.imported} color={quinaBlue} />
-                                    <ResultStatCard label="Já existentes" value={flash.import_result.existing} color={quinaBlueDark} />
-                                    <ResultStatCard label="Ignorados" value={flash.import_result.skipped} color={quinaBall} />
-                                </div>
-                            </div>
-                        ) : flash.sync_result ? (
-                            <div className="mt-5 grid grid-cols-3 gap-3">
-                                <ResultStatCard label="Importados" value={flash.sync_result.imported} color={quinaBlue} />
-                                <ResultStatCard label="Já existentes" value={flash.sync_result.existing} color={quinaBlueDark} />
-                                <ResultStatCard label="Ignorados" value={flash.sync_result.skipped} color={quinaBall} />
-                            </div>
                         ) : (
-                            <p className="mt-5 text-sm" style={{ color: quinaMuted }}>
-                                Quando você importar uma planilha ou sincronizar com a CAIXA, o resumo aparecerá aqui.
-                            </p>
+                            <div className="mt-6 rounded-3xl border p-5 text-slate-500" style={{ borderColor: quinaBorder }}>
+                                Ainda não há sorteios cadastrados para esta modalidade.
+                            </div>
                         )}
                     </div>
-                </section>
 
-                {latestDraw ? (
-                    <div className="grid xl:grid-cols-[1.7fr_1fr] gap-6">
-                        <section
-                            style={{
-                                backgroundColor: quinaCard,
-                                border: `1px solid ${quinaBorder}`,
-                                borderRadius: 28,
-                                boxShadow: '0 8px 32px rgba(15, 76, 129, 0.06)',
-                                padding: 32,
-                            }}
-                        >
-                            <div>
-                                <div
-                                    style={{
-                                        color: quinaMuted,
-                                        fontSize: 16,
-                                        fontWeight: 600,
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.08em',
-                                    }}
-                                >
-                                    Último resultado
+                    <div className="rounded-3xl border bg-white p-5 md:p-7" style={{ borderColor: quinaBorder }}>
+                        <h2 className="text-2xl font-extrabold" style={{ color: quinaBlue }}>Resumo rápido</h2>
+                        <div className="mt-5 grid gap-4">
+                            <div className="rounded-2xl border p-4" style={{ borderColor: quinaBorder }}>
+                                <div className="text-sm text-slate-500">Total de concursos</div>
+                                <div className="mt-1 text-3xl font-extrabold text-slate-800">{totalDraws}</div>
+                            </div>
+                            <div className="rounded-2xl border p-4" style={{ borderColor: quinaBorder }}>
+                                <div className="text-sm text-slate-500">Concurso mais recente</div>
+                                <div className="mt-1 text-3xl font-extrabold text-slate-800">{latestContestNumber || '—'}</div>
+                            </div>
+                            {dashboardNarrative ? (
+                                <div className="rounded-2xl border p-4 text-slate-600" style={{ borderColor: quinaBorder }}>
+                                    {typeof dashboardNarrative === 'string' ? dashboardNarrative : dashboardNarrative.summary || dashboardNarrative.headline || 'Resumo inteligente disponível.'}
                                 </div>
-
-                                <h2
-                                    className="mt-2"
-                                    style={{
-                                        color: quinaBlue,
-                                        fontSize: 'clamp(2rem, 3vw, 3rem)',
-                                        fontWeight: 800,
-                                        lineHeight: 1.05,
-                                    }}
-                                >
-                                    Concurso {latestDraw.contest_number}
-                                </h2>
-
-                                <p
-                                    className="mt-2"
-                                    style={{
-                                        color: quinaMuted,
-                                        fontSize: 22,
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    {latestDraw.draw_date}
-                                </p>
-                            </div>
-
-                            <div className="mt-10">
-                                <div
-                                    style={{
-                                        color: quinaMuted,
-                                        fontSize: 18,
-                                        fontWeight: 600,
-                                        marginBottom: 18,
-                                    }}
-                                >
-                                    Números sorteados
-                                </div>
-
-                                <div className="flex flex-wrap gap-4">
-                                    {latestDraw.numbers.map((number) => (
-                                        <div
-                                            key={number}
-                                            style={{
-                                                width: 84,
-                                                height: 84,
-                                                minWidth: 84,
-                                                minHeight: 84,
-                                                borderRadius: '9999px',
-                                                backgroundColor: quinaBall,
-                                                color: '#fff',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                fontSize: 34,
-                                                fontWeight: 700,
-                                                lineHeight: 1,
-                                                boxShadow: '0 10px 24px rgba(15, 76, 129, 0.22)',
-                                            }}
-                                        >
-                                            {String(number).padStart(2, '0')}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="mt-10 grid md:grid-cols-3 gap-4">
-                                <InfoCard
-                                    label="Total de concursos"
-                                    value={totalDraws}
-                                    color={quinaBlue}
-                                />
-                                <InfoCard
-                                    label="Último concurso"
-                                    value={latestContestNumber ?? '—'}
-                                    color={quinaBlue}
-                                />
-                                <InfoCard
-                                    label="Faixa válida"
-                                    value={`${modality.min_number} - ${modality.max_number}`}
-                                    color={quinaBlue}
-                                />
-                            </div>
-                        </section>
-
-                        <aside
-                            style={{
-                                backgroundColor: quinaCard,
-                                border: `1px solid ${quinaBorder}`,
-                                borderRadius: 28,
-                                boxShadow: '0 8px 32px rgba(15, 76, 129, 0.06)',
-                                padding: 32,
-                            }}
-                        >
-                            <h3
-                                style={{
-                                    color: quinaBlue,
-                                    fontSize: 30,
-                                    fontWeight: 800,
-                                    marginBottom: 24,
-                                }}
-                            >
-                                Premiação e detalhes
-                            </h3>
-
-                            <div className="space-y-5">
-                                <DetailLine
-                                    label="Observação"
-                                    value={
-                                        latestDraw.metadata?.observação ||
-                                        latestDraw.metadata?.observacao ||
-                                        '—'
-                                    }
-                                />
-
-                                <DetailLine
-                                    label="Ganhadores 5 acertos"
-                                    value={latestDraw.metadata?.['Ganhadores 5 acertos'] ?? '—'}
-                                />
-
-                                <DetailLine
-                                    label="Rateio 5 acertos"
-                                    value={latestDraw.metadata?.['Rateio 5 acertos'] ?? '—'}
-                                />
-
-                                <DetailLine
-                                    label="Ganhadores 4 acertos"
-                                    value={latestDraw.metadata?.['Ganhadores 4 acertos'] ?? '—'}
-                                />
-
-                                <DetailLine
-                                    label="Rateio 4 acertos"
-                                    value={latestDraw.metadata?.['Rateio 4 acertos'] ?? '—'}
-                                />
-
-                                <DetailLine
-                                    label="Estimativa prêmio"
-                                    value={latestDraw.metadata?.['Estimativa Premio'] ?? '—'}
-                                />
-                            </div>
-                        </aside>
-                    </div>
-                ) : null}
-
-                {latestDrawExplanation ? (
-                    <section
-                        style={{
-                            backgroundColor: quinaCard,
-                            border: `1px solid ${quinaBorder}`,
-                            borderRadius: 28,
-                            boxShadow: '0 8px 32px rgba(15, 76, 129, 0.05)',
-                            padding: 28,
-                        }}
-                    >
-                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                            <div>
-                                <h2
-                                    style={{
-                                        color: quinaBlue,
-                                        fontSize: 30,
-                                        fontWeight: 800,
-                                    }}
-                                >
-                                    Agente explicador do concurso
-                                </h2>
-
-                                <p
-                                    className="mt-1"
-                                    style={{
-                                        color: quinaMuted,
-                                        fontSize: 18,
-                                        fontWeight: 500,
-                                    }}
-                                >
-                                    {latestDrawExplanation.name} · v{latestDrawExplanation.version}
-                                </p>
-                            </div>
-
-                            <div
-                                style={{
-                                    color: quinaBlueDark,
-                                    fontSize: 18,
-                                    fontWeight: 700,
-                                }}
-                            >
-                                Concurso {latestDrawExplanation.contest_number}
-                            </div>
-                        </div>
-
-                        <div
-                            className="mt-5"
-                            style={{
-                                backgroundColor: '#f8fbff',
-                                border: '1px solid #d6e8fb',
-                                borderRadius: 16,
-                                padding: 16,
-                            }}
-                        >
-                            <div style={{ color: quinaBlue, fontSize: 18, fontWeight: 700 }}>
-                                {latestDrawExplanation.summary}
-                            </div>
-                        </div>
-
-                        {latestDrawExplanation.highlights?.length ? (
-                            <div className="mt-5 grid md:grid-cols-2 gap-3">
-                                {latestDrawExplanation.highlights.map((item, index) => (
-                                    <div
-                                        key={index}
-                                        className="rounded-xl border px-4 py-3 bg-slate-50 text-slate-700"
-                                    >
-                                        {item}
-                                    </div>
-                                ))}
-                            </div>
-                        ) : null}
-
-                        <div className="mt-5 grid md:grid-cols-3 gap-4">
-                            <InfoCard
-                                label="Soma"
-                                value={latestDrawExplanation.statistics?.sum ?? '—'}
-                                color={quinaBlue}
-                            />
-                            <InfoCard
-                                label="Amplitude"
-                                value={latestDrawExplanation.statistics?.range ?? '—'}
-                                color={quinaBlue}
-                            />
-                            <InfoCard
-                                label="Pares / Ímpares"
-                                value={`${latestDrawExplanation.statistics?.even_count ?? '—'} / ${latestDrawExplanation.statistics?.odd_count ?? '—'}`}
-                                color={quinaBlue}
-                            />
-                        </div>
-                    </section>
-                ) : null}
-
-                {dashboardNarrative ? (
-                    <section
-                        className="rounded-2xl border bg-white p-5 space-y-4"
-                        style={{
-                            borderColor: quinaBorder,
-                            boxShadow: '0 8px 32px rgba(15, 76, 129, 0.05)',
-                        }}
-                    >
-                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                            <div>
-                                <h2 style={{ color: quinaBlue, fontSize: 24, fontWeight: 700 }}>
-                                    Agente narrador do dashboard
-                                </h2>
-
-                                <div className="text-sm text-slate-500 mt-1">
-                                    {dashboardNarrative.name} · v{dashboardNarrative.version}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div
-                            style={{
-                                backgroundColor: '#f8fbff',
-                                border: '1px solid #d6e8fb',
-                                borderRadius: 16,
-                                padding: 16,
-                            }}
-                        >
-                            <div style={{ color: quinaBlue, fontSize: 18, fontWeight: 700 }}>
-                                {dashboardNarrative.headline}
-                            </div>
-                        </div>
-
-                        {dashboardNarrative.highlights?.length ? (
-                            <div className="space-y-2">
-                                {dashboardNarrative.highlights.map((item, index) => (
-                                    <div
-                                        key={index}
-                                        className="rounded-xl border px-4 py-3 bg-slate-50 text-slate-700"
-                                    >
-                                        {item}
-                                    </div>
-                                ))}
-                            </div>
-                        ) : null}
-
-                        <div className="rounded-xl border px-4 py-4 text-slate-700">
-                            {dashboardNarrative.summary}
-                        </div>
-                    </section>
-                ) : null}
-
-                <section
-                    style={{
-                        backgroundColor: quinaCard,
-                        border: `1px solid ${quinaBorder}`,
-                        borderRadius: 28,
-                        boxShadow: '0 8px 32px rgba(15, 76, 129, 0.05)',
-                        padding: 28,
-                    }}
-                >
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <h2
-                                style={{
-                                    color: quinaBlue,
-                                    fontSize: 30,
-                                    fontWeight: 800,
-                                }}
-                            >
-                                Janela de análise
-                            </h2>
-                            <p
-                                className="mt-1"
-                                style={{
-                                    color: quinaMuted,
-                                    fontSize: 18,
-                                    fontWeight: 500,
-                                }}
-                            >
-                                Compare estatísticas da base inteira com os concursos mais recentes.
-                            </p>
-                        </div>
-
-                        <div className="flex gap-2 flex-wrap">
-                            {[
-                                { value: 'all', label: 'Geral' },
-                                { value: '10', label: 'Últimos 10' },
-                                { value: '20', label: 'Últimos 20' },
-                                { value: '50', label: 'Últimos 50' },
-                            ].map((option) => {
-                                const active = selectedWindow === option.value;
-
-                                return (
-                                    <button
-                                        key={option.value}
-                                        type="button"
-                                        onClick={() => setSelectedWindow(option.value)}
-                                        style={{
-                                            backgroundColor: active ? quinaBlue : '#fff',
-                                            color: active ? '#fff' : quinaBlueDark,
-                                            border: `1px solid ${active ? quinaBlue : quinaBorder}`,
-                                            padding: '12px 18px',
-                                            borderRadius: 14,
-                                            fontWeight: 700,
-                                            fontSize: 16,
-                                        }}
-                                    >
-                                        {option.label}
-                                    </button>
-                                );
-                            })}
+                            ) : null}
                         </div>
                     </div>
                 </section>
 
-                <section
-                    style={{
-                        backgroundColor: quinaCard,
-                        border: `1px solid ${quinaBorder}`,
-                        borderRadius: 28,
-                        boxShadow: '0 8px 32px rgba(15, 76, 129, 0.05)',
-                        padding: 28,
-                    }}
-                >
-                    <div className="mb-5">
-                        <h2
-                            style={{
-                                color: quinaBlue,
-                                fontSize: 30,
-                                fontWeight: 800,
-                            }}
-                        >
-                            Frequência por número
-                        </h2>
-                        <p
-                            className="mt-1"
-                            style={{
-                                color: quinaMuted,
-                                fontSize: 18,
-                                fontWeight: 500,
-                            }}
-                        >
-                            {selectedWindow === 'all'
-                                ? 'Distribuição de frequência considerando toda a base importada.'
-                                : `Distribuição de frequência considerando os últimos ${selectedWindow} concursos.`}
-                        </p>
-                    </div>
-
-                    <div className="h-[380px] md:h-[460px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chartData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis
-                                    dataKey="number"
-                                    interval={0}
-                                    angle={-45}
-                                    textAnchor="end"
-                                    height={70}
-                                />
-                                <YAxis allowDecimals={false} />
-                                <Tooltip />
-                                <Bar dataKey="total" fill={quinaBlue} radius={[8, 8, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </section>
-
-                <div className="grid xl:grid-cols-2 gap-6">
-                    <StatsPanel
-                        title={`Mais frequentes ${selectedWindow === 'all' ? '(geral)' : `(últimos ${selectedWindow})`}`}
-                        items={topFrequencies}
-                        color={quinaBlue}
-                    />
-
-                    <StatsPanel
-                        title={`Mais atrasados ${selectedWindow === 'all' ? '(geral)' : `(últimos ${selectedWindow})`}`}
-                        items={topDelays}
-                        color={quinaBlue}
-                    />
-                </div>
-
-                <section
-                    style={{
-                        backgroundColor: quinaCard,
-                        border: `1px solid ${quinaBorder}`,
-                        borderRadius: 28,
-                        boxShadow: '0 8px 32px rgba(15, 76, 129, 0.05)',
-                        padding: 28,
-                    }}
-                >
-                    <div className="mb-6">
-                        <h2
-                            style={{
-                                color: quinaBlue,
-                                fontSize: 30,
-                                fontWeight: 800,
-                            }}
-                        >
-                            Últimos concursos importados
-                        </h2>
-                        <p
-                            className="mt-1"
-                            style={{
-                                color: quinaMuted,
-                                fontSize: 18,
-                                fontWeight: 500,
-                            }}
-                        >
-                            Visualização dos resultados mais recentes já carregados no sistema.
-                        </p>
-                    </div>
-
-                    {recentDraws.length === 0 ? (
-                        <p style={{ color: quinaMuted, fontSize: 16 }}>
-                            Nenhum concurso importado ainda.
-                        </p>
-                    ) : (
-                        <div
-                            style={{
-                                border: `1px solid ${quinaBorder}`,
-                                borderRadius: 22,
-                                overflow: 'hidden',
-                            }}
-                        >
-                            {recentDraws.map((draw, index) => (
-                                <div
-                                    key={draw.id}
-                                    style={{
-                                        padding: 20,
-                                        backgroundColor: '#fff',
-                                        borderBottom:
-                                            index === recentDraws.length - 1
-                                                ? 'none'
-                                                : `1px solid ${quinaBorder}`,
-                                    }}
-                                >
-                                    <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-                                        <div>
-                                            <div
-                                                style={{
-                                                    color: quinaBlue,
-                                                    fontWeight: 700,
-                                                    fontSize: 22,
-                                                }}
-                                            >
-                                                Concurso {draw.contest_number}
-                                            </div>
-
-                                            <div
-                                                style={{
-                                                    color: '#111827',
-                                                    fontSize: 18,
-                                                    marginTop: 4,
-                                                }}
-                                            >
-                                                {draw.draw_date}
-                                            </div>
-                                        </div>
-
-                                        <div className="flex flex-wrap gap-2">
-                                            {draw.numbers.map((number) => (
-                                                <div
-                                                    key={number}
-                                                    style={{
-                                                        width: 46,
-                                                        height: 46,
-                                                        minWidth: 46,
-                                                        minHeight: 46,
-                                                        borderRadius: '9999px',
-                                                        backgroundColor: quinaBall,
-                                                        color: '#fff',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        fontWeight: 700,
-                                                        fontSize: 20,
-                                                        lineHeight: 1,
-                                                        boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
-                                                    }}
-                                                >
-                                                    {String(number).padStart(2, '0')}
-                                                </div>
-                                            ))}
-                                        </div>
+                <section className="grid gap-6 lg:grid-cols-2">
+                    <div className="rounded-3xl border bg-white p-5 md:p-7" style={{ borderColor: quinaBorder }}>
+                        <h2 className="text-2xl font-extrabold" style={{ color: quinaBlue }}>Números mais frequentes</h2>
+                        <div className="mt-5 space-y-3">
+                            {topFrequencies.length === 0 ? (
+                                <div className="text-slate-500">Sem dados suficientes.</div>
+                            ) : topFrequencies.map(([number, total]) => (
+                                <div key={number} className="flex items-center justify-between rounded-2xl border px-4 py-3" style={{ borderColor: quinaBorder }}>
+                                    <div className="flex items-center gap-3">
+                                        <NumberBall number={number} />
+                                        <span className="font-semibold text-slate-700">Número {String(number).padStart(2, '0')}</span>
                                     </div>
-
-                                    <div
-                                        className="mt-4"
-                                        style={{
-                                            color: '#111827',
-                                            fontSize: 16,
-                                        }}
-                                    >
-                                        <strong>Observação:</strong>{' '}
-                                        {draw.metadata?.observação || draw.metadata?.observacao || '—'}
-                                    </div>
+                                    <span className="font-bold text-slate-800">{total}x</span>
                                 </div>
                             ))}
                         </div>
-                    )}
+                    </div>
+
+                    <div className="rounded-3xl border bg-white p-5 md:p-7" style={{ borderColor: quinaBorder }}>
+                        <h2 className="text-2xl font-extrabold" style={{ color: quinaBlue }}>Números mais atrasados</h2>
+                        <div className="mt-5 space-y-3">
+                            {topDelays.length === 0 ? (
+                                <div className="text-slate-500">Sem dados suficientes.</div>
+                            ) : topDelays.map(([number, total]) => (
+                                <div key={number} className="flex items-center justify-between rounded-2xl border px-4 py-3" style={{ borderColor: quinaBorder }}>
+                                    <div className="flex items-center gap-3">
+                                        <NumberBall number={number} active={false} />
+                                        <span className="font-semibold text-slate-700">Número {String(number).padStart(2, '0')}</span>
+                                    </div>
+                                    <span className="font-bold text-slate-800">{total} concursos</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+
+                <section className="rounded-3xl border bg-white p-5 md:p-7" style={{ borderColor: quinaBorder }}>
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <h2 className="text-2xl font-extrabold" style={{ color: quinaBlue }}>Últimos concursos</h2>
+                            <p className="mt-1 text-slate-500">A parte pública do sistema continua focada nos resultados oficiais.</p>
+                        </div>
+                        {auth?.user ? (
+                            <Link href={`/lottery/modalities/${modality.id}/bets`} className="rounded-2xl px-4 py-3 font-semibold text-white" style={{ backgroundColor: quinaBlue }}>
+                                Minhas apostas
+                            </Link>
+                        ) : null}
+                    </div>
+                    <div className="mt-6 space-y-4">
+                        {recentDraws.map((draw) => (
+                            <div key={draw.id} className="rounded-2xl border p-4" style={{ borderColor: quinaBorder }}>
+                                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                    <div>
+                                        <div className="font-semibold text-slate-800">Concurso {draw.contest_number}</div>
+                                        <div className="text-sm text-slate-500">{draw.draw_date || 'Data não informada'}</div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {draw.numbers.map((number) => <NumberBall key={`${draw.id}-${number}`} number={number} />)}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </section>
             </div>
         </div>
-    );
-}
-
-
-function ResultStatCard({ label, value, color }) {
-    return (
-        <div
-            style={{
-                backgroundColor: '#f8fbff',
-                border: '1px solid rgba(15, 76, 129, 0.12)',
-                borderRadius: 22,
-                padding: 18,
-            }}
-        >
-            <div style={{ color: '#667085', fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                {label}
-            </div>
-            <div className="mt-2" style={{ color, fontSize: 30, fontWeight: 800, lineHeight: 1 }}>
-                {value}
-            </div>
-        </div>
-    );
-}
-
-function InfoCard({ label, value, color }) {
-    return (
-        <div
-            style={{
-                border: '1px solid #d9e1ea',
-                borderRadius: 22,
-                backgroundColor: '#f8fbff',
-                padding: 20,
-            }}
-        >
-            <div
-                style={{
-                    color: '#667085',
-                    fontSize: 15,
-                    fontWeight: 600,
-                }}
-            >
-                {label}
-            </div>
-
-            <div
-                className="mt-2"
-                style={{
-                    color,
-                    fontSize: 40,
-                    fontWeight: 800,
-                    lineHeight: 1,
-                }}
-            >
-                {value}
-            </div>
-        </div>
-    );
-}
-
-function DetailLine({ label, value }) {
-    return (
-        <div
-            style={{
-                borderBottom: '1px solid #e2e8f0',
-                paddingBottom: 14,
-            }}
-        >
-            <div
-                style={{
-                    color: '#667085',
-                    fontSize: 15,
-                    fontWeight: 600,
-                }}
-            >
-                {label}
-            </div>
-
-            <div
-                className="mt-1"
-                style={{
-                    color: '#111827',
-                    fontSize: 22,
-                    fontWeight: 700,
-                }}
-            >
-                {value}
-            </div>
-        </div>
-    );
-}
-
-function StatsPanel({ title, items, color }) {
-    return (
-        <section
-            style={{
-                backgroundColor: '#fff',
-                border: '1px solid #d9e1ea',
-                borderRadius: 28,
-                boxShadow: '0 8px 32px rgba(15, 76, 129, 0.05)',
-                padding: 24,
-            }}
-        >
-            <h2
-                style={{
-                    color,
-                    fontSize: 34,
-                    fontWeight: 800,
-                    marginBottom: 18,
-                }}
-            >
-                {title}
-            </h2>
-
-            <div
-                style={{
-                    border: '1px solid #d9e1ea',
-                    borderRadius: 20,
-                    overflow: 'hidden',
-                }}
-            >
-                {items.map(([number, value], index) => (
-                    <div
-                        key={number}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 16,
-                            padding: '18px 22px',
-                            backgroundColor: '#fff',
-                            borderBottom:
-                                index === items.length - 1 ? 'none' : '1px solid #d9e1ea',
-                        }}
-                    >
-                        <div
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 18,
-                            }}
-                        >
-                            <div
-                                style={{
-                                    width: 64,
-                                    height: 64,
-                                    minWidth: 64,
-                                    minHeight: 64,
-                                    borderRadius: '9999px',
-                                    backgroundColor: color,
-                                    color: '#fff',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: 30,
-                                    fontWeight: 500,
-                                    lineHeight: 1,
-                                }}
-                            >
-                                {index + 1}
-                            </div>
-
-                            <div
-                                style={{
-                                    width: 74,
-                                    height: 74,
-                                    minWidth: 74,
-                                    minHeight: 74,
-                                    borderRadius: '9999px',
-                                    border: `5px solid ${color}`,
-                                    backgroundColor: '#fff',
-                                    color: '#000',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: 34,
-                                    fontWeight: 700,
-                                    lineHeight: 1,
-                                }}
-                            >
-                                {number}
-                            </div>
-                        </div>
-
-                        <div
-                            style={{
-                                color,
-                                fontSize: 54,
-                                fontWeight: 500,
-                                lineHeight: 1,
-                            }}
-                        >
-                            {value}
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </section>
     );
 }

@@ -37,17 +37,28 @@ Route::prefix('lottery')->group(function () {
      Route::post('/modalities/{modality}/import-spreadsheet', [ModalityController::class, 'importSpreadsheet'])
         ->name('lottery.modalities.import-spreadsheet');
 
-    Route::get('/modalities/{modality}/play', [GameController::class, 'play'])
-        ->name('lottery.modalities.play');
+    Route::middleware('auth')->group(function () {
+        Route::get('/modalities/{modality}/play', [GameController::class, 'play'])
+            ->name('lottery.modalities.play');
+        Route::get('/modalities/{modality}/combination-history', [ModalityController::class, 'combinationHistory'])
+            ->name('lottery.combination-history');
+        Route::get('/modalities/{modality}/bets', [ModalityController::class, 'bets'])
+            ->name('lottery.bets');
+        Route::get('/modalities/{modality}/combination-history', [ModalityController::class, 'combinationHistory'])
+            ->name('lottery.combination-history');
+    });
 
     Route::get('/modalities/{modality}/history', [ModalityController::class, 'history'])
         ->name('lottery.modalities.history');
     
-    Route::get('/modalities/{modality}/combination-history', [ModalityController::class, 'combinationHistory'])
-        ->name('lottery.modalities.combination-history');
-    
-    Route::get('/modalities/{modality}/combination-history', [ModalityController::class, 'combinationHistory'])
-        ->name('lottery.combination-history');
+    Route::post('/modalities/{modality}/combination-history/{item}/register-bet', [ModalityController::class, 'registerCombinationBet'])
+        ->name('lottery.combination-history.register-bet');
+
+    Route::get('/modalities/{modality}/combination-history/{item}/check-bet', [ModalityController::class, 'checkCombinationBet'])
+        ->name('lottery.combination-history.check-bet');
+
+    Route::get('/my-bets', [ModalityController::class, 'myBets'])
+        ->name('lottery.my-bets');
 
     Route::delete('/modalities/{modality}/combination-history/{item}', [ModalityController::class, 'destroyCombinationHistory'])
         ->name('lottery.combination-history.destroy');
@@ -55,12 +66,6 @@ Route::prefix('lottery')->group(function () {
     Route::delete('/modalities/{modality}/combination-history', [ModalityController::class, 'clearCombinationHistory'])
         ->name('lottery.combination-history.clear');
     
-     Route::post('/modalities/{modality}/sync-results', [ModalityController::class, 'syncResults'])
+    Route::post('/modalities/{modality}/sync-results', [ModalityController::class, 'syncResults'])
         ->name('lottery.modalities.sync-results');
-
-    Route::post('/modalities/{modality}/combination-history/{item}/register-bet', [ModalityController::class, 'registerCombinationBet'])
-    ->name('lottery.combination-history.register-bet');
-
-    Route::get('/modalities/{modality}/combination-history/{item}/check-bet', [ModalityController::class, 'checkCombinationBet'])
-        ->name('lottery.combination-history.check-bet');
 });

@@ -2,15 +2,18 @@
 
 use App\Models\CombinationHistory;
 use App\Models\LotteryModality;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
 
-it('pode listar o histórico de combinações da modalidade', function () {
+it('pode listar o histórico privado de combinações da modalidade', function () {
     $quina = LotteryModality::factory()->quina()->create();
+    $user = User::factory()->create();
 
     CombinationHistory::create([
+        'user_id' => $user->id,
         'lottery_modality_id' => $quina->id,
         'numbers' => [1, 2, 3, 4, 5],
         'source' => 'manual',
@@ -22,6 +25,7 @@ it('pode listar o histórico de combinações da modalidade', function () {
     ]);
 
     CombinationHistory::create([
+        'user_id' => $user->id,
         'lottery_modality_id' => $quina->id,
         'numbers' => [10, 20, 30, 40, 50],
         'source' => 'generated',
@@ -32,7 +36,7 @@ it('pode listar o histórico de combinações da modalidade', function () {
         ],
     ]);
 
-    $response = $this->get("/lottery/modalities/{$quina->id}/combination-history");
+    $response = $this->actingAs($user)->get("/lottery/modalities/{$quina->id}/combination-history");
 
     $response->assertStatus(200);
 
@@ -43,10 +47,12 @@ it('pode listar o histórico de combinações da modalidade', function () {
     );
 });
 
-it('pode filtrar o histórico de combinações por origem', function () {
+it('pode filtrar o histórico privado de combinações por origem', function () {
     $quina = LotteryModality::factory()->quina()->create();
+    $user = User::factory()->create();
 
     CombinationHistory::create([
+        'user_id' => $user->id,
         'lottery_modality_id' => $quina->id,
         'numbers' => [1, 2, 3, 4, 5],
         'source' => 'manual',
@@ -54,13 +60,14 @@ it('pode filtrar o histórico de combinações por origem', function () {
     ]);
 
     CombinationHistory::create([
+        'user_id' => $user->id,
         'lottery_modality_id' => $quina->id,
         'numbers' => [10, 20, 30, 40, 50],
         'source' => 'generated',
         'analysis_snapshot' => ['sum' => 150],
     ]);
 
-    $response = $this->get("/lottery/modalities/{$quina->id}/combination-history?source=generated");
+    $response = $this->actingAs($user)->get("/lottery/modalities/{$quina->id}/combination-history?source=generated");
 
     $response->assertStatus(200);
 
@@ -71,10 +78,12 @@ it('pode filtrar o histórico de combinações por origem', function () {
     );
 });
 
-it('pode exibir a narrativa no histórico de combinações', function () {
+it('pode exibir a narrativa no histórico privado de combinações', function () {
     $quina = LotteryModality::factory()->quina()->create();
+    $user = User::factory()->create();
 
-    \App\Models\CombinationHistory::create([
+    CombinationHistory::create([
+        'user_id' => $user->id,
         'lottery_modality_id' => $quina->id,
         'numbers' => [1, 2, 3, 4, 5],
         'source' => 'manual',
@@ -105,17 +114,14 @@ it('pode exibir a narrativa no histórico de combinações', function () {
         ],
     ]);
 
-    $response = $this->get("/lottery/modalities/{$quina->id}/combination-history");
+    $response = $this->actingAs($user)->get("/lottery/modalities/{$quina->id}/combination-history");
 
     $response->assertStatus(200);
 
-    $response->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+    $response->assertInertia(fn (Assert $page) => $page
         ->component('Lottery/CombinationHistory')
         ->has('items.data', 1)
-        ->where(
-            'items.data.0.analysis_snapshot.narrative.headline',
-            'A combinação está relativamente próxima do perfil histórico médio.'
-        )
+        ->where('items.data.0.analysis_snapshot.narrative.headline', 'A combinação está relativamente próxima do perfil histórico médio.')
         ->where('items.data.0.analysis_snapshot.score.label', 'Boa')
     );
 });

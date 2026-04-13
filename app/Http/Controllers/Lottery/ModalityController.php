@@ -17,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Auth;
 use InvalidArgumentException;
 use App\Services\Lottery\SmartGameGeneratorGatewayService;
 
@@ -163,9 +164,9 @@ class ModalityController extends Controller
     }
 
     public function generateSmart(
-        Request $request,
-        LotteryModality $modality,
-        SmartGameGeneratorGatewayService $generator
+    Request $request,
+    LotteryModality $modality,
+    SmartGameGeneratorGatewayService $generator
     ): JsonResponse {
         try {
             $games = $generator->generate($modality, $request->all());
@@ -196,13 +197,9 @@ class ModalityController extends Controller
 
             $analysis = $analysisAgent->analyze($modality, $numbers);
 
-            $historyItem = $historyService->store($modality, $numbers, $source, $analysis);
+            $historyService->store($modality, $numbers, $source, $analysis, $request->user()?->id);
 
-            return response()->json(array_merge($analysis, [
-                'history_item_id' => $historyItem->id,
-                'bet_contest_number' => $historyItem->bet_contest_number,
-                'bet_registered_at' => $historyItem->bet_registered_at?->toIso8601String(),
-            ]));
+            return response()->json($analysis);
         } catch (InvalidArgumentException $e) {
             return response()->json([
                 'message' => $e->getMessage(),
@@ -303,33 +300,184 @@ class ModalityController extends Controller
 
         $items = \App\Models\CombinationHistory::query()
             ->where('lottery_modality_id', $modality->id)
+            ->where('user_id', $request->user()->id)
             ->when($source, fn ($query) => $query->where('source', $source))
             ->latest()
-            ->paginate(15)
+            ->paginate(10)
             ->through(function ($item) {
                 return [
                     'id' => $item->id,
                     'numbers' => $item->numbers,
                     'source' => $item->source,
+                    'analysis_snapshot' => $item->analysis_snapshot,
                     'bet_contest_number' => $item->bet_contest_number,
                     'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
-                    'bet_checked_at' => $item->bet_checked_at?->format('d/m/Y H:i'),
-                    'bet_result_snapshot' => $item->bet_result_snapshot,
-                    'analysis_snapshot' => $item->analysis_snapshot,
                     'created_at' => $item->created_at?->format('d/m/Y H:i'),
                 ];
             })
             ->withQueryString();
 
-        $latestContestNumber = $modality->draws()->max('contest_number');
-
         return inertia('Lottery/CombinationHistory', [
             'modality' => $modality,
             'items' => $items,
-            'latestContestNumber' => $latestContestNumber,
             'filters' => [
                 'source' => $source,
             ],
+        ]);
+    }
+
+    public function registerCombinationBet(
+        Request $request,
+        LotteryModality $modality,
+        \App\Models\CombinationHistory $item
+    ): JsonResponse 
+    {
+        
+        if (! $request->user()) {        
+            return response()->json([  
+                'message' => 'Faça login para registrar uma aposta.',
+                ], 401);
+        }
+
+        abort_unless($item->lottery_modality_id === $modality->id, 404);
+
+        if ($item->user_id !== null && $item->user_id !== $request->user()->id) {
+            abort(404);
+        }
+
+        $latestDraw = $modality->draws()->with('numbers')->orderByDesc('contest_number')->first();
+
+        if (! $latestDraw) {
+            return response()->json([
+                'message' => 'Ainda não há concurso oficial disponível para vincular a aposta.',
+            ], 422);
+        }
+
+        $item->forceFill([
+            'user_id' => $request->user()->id,
+            'bet_contest_number' => $latestDraw->contest_number,
+            'bet_registered_at' => now(),
+        ])->save();
+
+        return response()->json([
+            'item' => [
+                'id' => $item->id,
+                'bet_contest_number' => $item->bet_contest_number,
+                'bet_registered_at' => $item->bet_registered_at?->toISOString(),
+            ],
+        ]);
+    }
+
+    public function checkCombinationBet(
+        Request $request,
+        LotteryModality $modality,
+        \App\Models\CombinationHistory $item
+    ) {
+        if (! $request->user()) {
+            return redirect()->route('login');
+        }
+
+        abort_unless($item->lottery_modality_id === $modality->id, 404);
+        abort_unless($item->user_id === $request->user()->id, 404);
+        abort_unless($item->bet_contest_number, 404);
+
+        $draw = $modality->draws()
+            ->with('numbers')
+            ->where('contest_number', $item->bet_contest_number)
+            ->firstOrFail();
+
+        $drawNumbers = $draw->numbers->pluck('number')->map(fn ($value) => (int) $value)->sort()->values()->all();
+        $userNumbers = collect($item->numbers)->map(fn ($value) => (int) $value)->sort()->values()->all();
+        $hits = collect($userNumbers)->intersect($drawNumbers)->values()->all();
+
+        return inertia('Lottery/CheckBet', [
+            'modality' => $modality,
+            'historyItem' => [
+                'id' => $item->id,
+                'numbers' => $userNumbers,
+                'bet_contest_number' => $item->bet_contest_number,
+                'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
+            ],
+            'officialResult' => [
+                'contest_number' => $draw->contest_number,
+                'numbers' => $drawNumbers,
+            ],
+            'checkResult' => [
+                'hits' => $hits,
+                'hit_count' => count($hits),
+            ],
+        ]);
+    }
+
+    public function bets(Request $request, LotteryModality $modality)
+    {
+        $days = (int) $request->integer('days', 30);
+
+        if (! in_array($days, [7, 15, 30, 60, 90], true)) {
+            $days = 30;
+        }
+
+        $items = \App\Models\CombinationHistory::query()
+            ->where('lottery_modality_id', $modality->id)
+            ->where('user_id', auth()->id())
+            ->whereNotNull('bet_registered_at')
+            ->where('bet_registered_at', '>=', now()->subDays($days))
+            ->latest('bet_registered_at')
+            ->paginate(10)
+            ->withQueryString();
+
+        return Inertia::render('Lottery/MyBets', [
+            'modality' => $modality,
+            'items' => $items,
+            'filters' => [
+                'days' => $days,
+            ],
+        ]);
+    }
+
+    public function myBets(Request $request)
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return redirect()->route('login');
+        }
+
+        $days = (int) $request->integer('days', 30);
+        $allowedDays = [7, 15, 30, 60, 90];
+        if (! in_array($days, $allowedDays, true)) {
+            $days = 30;
+        }
+
+        $items = \App\Models\CombinationHistory::query()
+            ->with('modality')
+            ->where('user_id', $user->id)
+            ->whereNotNull('bet_registered_at')
+            ->where('bet_registered_at', '>=', now()->subDays($days)->startOfDay())
+            ->latest('bet_registered_at')
+            ->paginate(10)
+            ->through(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'modality' => [
+                        'id' => $item->modality?->id,
+                        'name' => $item->modality?->name,
+                        'code' => $item->modality?->code,
+                    ],
+                    'numbers' => $item->numbers,
+                    'source' => $item->source,
+                    'bet_contest_number' => $item->bet_contest_number,
+                    'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
+                ];
+            })
+            ->withQueryString();
+
+        return inertia('Lottery/MyBets', [
+            'items' => $items,
+            'filters' => [
+                'days' => $days,
+            ],
+            'dayOptions' => $allowedDays,
         ]);
     }
 
@@ -351,124 +499,6 @@ class ModalityController extends Controller
             ->delete();
 
         return back()->with('success', 'Histórico limpo com sucesso.');
-    }
-
-
-    public function registerCombinationBet(
-        Request $request,
-        LotteryModality $modality,
-        \App\Models\CombinationHistory $item
-    ) {
-        abort_unless($item->lottery_modality_id === $modality->id, 404);
-
-        $latestDraw = $modality->draws()
-            ->with('numbers')
-            ->orderByDesc('contest_number')
-            ->first();
-
-        if (! $latestDraw) {
-            $message = 'Ainda não existe resultado oficial cadastrado para vincular a aposta.';
-
-            if ($request->expectsJson()) {
-                return response()->json(['message' => $message], 422);
-            }
-
-            return back()->with('error', $message);
-        }
-
-        $item->forceFill([
-            'bet_contest_number' => $latestDraw->contest_number,
-            'bet_registered_at' => now(),
-            'bet_result_snapshot' => null,
-            'bet_checked_at' => null,
-        ])->save();
-
-        $payload = [
-            'message' => sprintf('Aposta vinculada ao concurso %s com sucesso.', $latestDraw->contest_number),
-            'item' => [
-                'id' => $item->id,
-                'bet_contest_number' => $item->bet_contest_number,
-                'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
-                'bet_checked_at' => $item->bet_checked_at?->format('d/m/Y H:i'),
-                'bet_result_snapshot' => $item->bet_result_snapshot,
-            ],
-        ];
-
-        if ($request->expectsJson()) {
-            return response()->json($payload);
-        }
-
-        return back()->with('success', $payload['message']);
-    }
-
-    public function checkCombinationBet(
-        LotteryModality $modality,
-        \App\Models\CombinationHistory $item
-    ) {
-        abort_unless($item->lottery_modality_id === $modality->id, 404);
-
-        $contestNumber = $item->bet_contest_number;
-
-        $draw = null;
-
-        if ($contestNumber) {
-            $draw = $modality->draws()
-                ->with('numbers')
-                ->where('contest_number', $contestNumber)
-                ->first();
-        }
-
-        $officialNumbers = $draw
-            ? $draw->numbers->pluck('number')->map(fn ($number) => (int) $number)->sort()->values()->all()
-            : [];
-
-        $betNumbers = collect($item->numbers)
-            ->map(fn ($number) => (int) $number)
-            ->sort()
-            ->values()
-            ->all();
-
-        $hits = array_values(array_intersect($betNumbers, $officialNumbers));
-
-        $resultSnapshot = null;
-
-        if ($draw) {
-            $resultSnapshot = [
-                'contest_number' => $draw->contest_number,
-                'draw_date' => $draw->draw_date?->format('d/m/Y'),
-                'official_numbers' => $officialNumbers,
-                'user_numbers' => $betNumbers,
-                'hits' => array_map('intval', $hits),
-                'hit_count' => count($hits),
-                'hit_label' => match (count($hits)) {
-                    0 => 'nenhum',
-                    1 => '1 número',
-                    default => count($hits) . ' números',
-                },
-            ];
-
-            $item->forceFill([
-                'bet_result_snapshot' => $resultSnapshot,
-                'bet_checked_at' => now(),
-            ])->save();
-        }
-
-        $latestContestNumber = $modality->draws()->max('contest_number');
-
-        return inertia('Lottery/CheckBet', [
-            'modality' => $modality,
-            'historyItem' => [
-                'id' => $item->id,
-                'numbers' => $betNumbers,
-                'source' => $item->source,
-                'created_at' => $item->created_at?->format('d/m/Y H:i'),
-                'bet_contest_number' => $item->bet_contest_number,
-                'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
-                'bet_checked_at' => $item->bet_checked_at?->format('d/m/Y H:i'),
-            ],
-            'latestContestNumber' => $latestContestNumber,
-            'officialResult' => $resultSnapshot,
-        ]);
     }
 
     protected function prepareLongRunningRequest(int $seconds = 300, string $memory = '512M'): void

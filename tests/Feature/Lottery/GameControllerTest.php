@@ -1,26 +1,26 @@
 <?php
 
+use App\Models\CombinationHistory;
 use App\Models\LotteryModality;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
-use App\Models\CombinationHistory;
-use App\Models\Draw;
-use App\Models\DrawNumber;
 
 uses(RefreshDatabase::class);
 
-it('pode abrir a página de reprodução para uma modalidade', function () {
+it('protege a página de reprodução para usuários não autenticados', function () {
     $quina = LotteryModality::factory()->quina()->create();
 
-    $response = $this->get("/lottery/modalities/{$quina->id}/play");
-
-    $response->assertStatus(200);
+    $this->get("/lottery/modalities/{$quina->id}/play")
+        ->assertRedirect('/login');
 });
 
-it('pode abrir a tela play com números vindos do histórico', function () {
+it('pode abrir a tela play com números vindos da query quando autenticado', function () {
     $quina = LotteryModality::factory()->quina()->create();
+    $user = User::factory()->create();
 
-    $response = $this->get("/lottery/modalities/{$quina->id}/play?numbers=1,2,3,4,5");
+    $response = $this->actingAs($user)
+        ->get("/lottery/modalities/{$quina->id}/play?numbers=1,2,3,4,5");
 
     $response->assertStatus(200);
 
@@ -32,15 +32,18 @@ it('pode abrir a tela play com números vindos do histórico', function () {
 
 it('pode abrir a tela play com números vindos do combination history via history_id', function () {
     $quina = LotteryModality::factory()->quina()->create();
+    $user = User::factory()->create();
 
     $history = CombinationHistory::factory()->create([
+        'user_id' => $user->id,
         'lottery_modality_id' => $quina->id,
         'numbers' => [22, 41, 42, 49, 53],
         'source' => 'generated',
         'analysis_snapshot' => [],
     ]);
 
-    $response = $this->get("/lottery/modalities/{$quina->id}/play?history_id={$history->id}");
+    $response = $this->actingAs($user)
+        ->get("/lottery/modalities/{$quina->id}/play?history_id={$history->id}");
 
     $response->assertStatus(200);
 

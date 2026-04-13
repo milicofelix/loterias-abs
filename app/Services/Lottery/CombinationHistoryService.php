@@ -15,12 +15,14 @@ class CombinationHistoryService
         LotteryModality $modality,
         array $numbers,
         string $source,
-        ?array $analysis = null
+        ?array $analysis = null,
+        ?int $userId = null
     ): CombinationHistory {
         sort($numbers);
 
         return CombinationHistory::create([
             'lottery_modality_id' => $modality->id,
+            'user_id' => $userId,
             'numbers' => array_values($numbers),
             'source' => $source,
             'analysis_snapshot' => $analysis,
