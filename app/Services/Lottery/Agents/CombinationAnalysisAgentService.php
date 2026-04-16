@@ -5,12 +5,14 @@ namespace App\Services\Lottery\Agents;
 use App\Models\LotteryModality;
 use App\Services\Lottery\CombinationInsightsService;
 use App\Services\Lottery\Agents\ProfileComparisonAgentService;
+use App\Services\Lottery\HistoricalPrizeSummaryService;
 
 class CombinationAnalysisAgentService
 {
     public function __construct(
         protected CombinationInsightsService $combinationInsightsService,
-        protected ProfileComparisonAgentService $profileComparisonAgentService
+        protected ProfileComparisonAgentService $profileComparisonAgentService,
+        protected HistoricalPrizeSummaryService $historicalPrizeSummaryService
     ) {
     }
 
@@ -37,6 +39,7 @@ class CombinationAnalysisAgentService
     {
         $analysis = $this->combinationInsightsService->analyze($modality, $numbers);
         $profileComparison = $this->profileComparisonAgentService->compare($modality, $numbers);
+        $historicalPrizeSummary = $this->historicalPrizeSummaryService->analyze($modality, $numbers);
 
         return array_merge($analysis, [
             'agent' => [
@@ -47,6 +50,7 @@ class CombinationAnalysisAgentService
                 'warnings' => $this->buildWarnings($analysis),
             ],
             'profile_comparison' => $profileComparison,
+            'historical_prize_summary' => $historicalPrizeSummary,
         ]);
     }
 

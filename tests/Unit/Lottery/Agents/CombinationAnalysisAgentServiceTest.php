@@ -25,6 +25,7 @@ it('retorna a estrutura do agente junto com a análise base', function () {
         ->toHaveKey('narrative')
         ->toHaveKey('score')
         ->toHaveKey('agent')
+        ->toHaveKey('historical_prize_summary')
         ->and($result['agent'])->toBeArray()
         ->and($result['agent'])->toHaveKeys([
             'name',

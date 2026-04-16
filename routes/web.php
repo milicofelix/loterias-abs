@@ -34,10 +34,13 @@ Route::prefix('lottery')->group(function () {
 
     Route::post('/modalities/{modality}/analyze', [ModalityController::class, 'analyze']);
 
-     Route::post('/modalities/{modality}/import-spreadsheet', [ModalityController::class, 'importSpreadsheet'])
-        ->name('lottery.modalities.import-spreadsheet');
-
     Route::middleware('auth')->group(function () {
+        Route::post('/modalities/{modality}/import-spreadsheet', [ModalityController::class, 'importSpreadsheet'])
+            ->name('lottery.modalities.import-spreadsheet');
+
+        Route::post('/modalities/{modality}/draws', [ModalityController::class, 'storeManualDraw'])
+            ->name('lottery.modalities.draws.store');
+
         Route::get('/modalities/{modality}/play', [GameController::class, 'play'])
             ->name('lottery.modalities.play');
         Route::get('/modalities/{modality}/combination-history', [ModalityController::class, 'combinationHistory'])

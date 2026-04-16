@@ -2,6 +2,7 @@
 
 use App\Models\Draw;
 use App\Models\LotteryModality;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -65,6 +66,8 @@ function makeUploadedQuinaSpreadsheet(array $rows, string $sheetName = 'QUINA', 
 }
 
 it('importa manualmente uma planilha da quina pela interface', function () {
+    $this->actingAs(User::factory()->create());
+
     $quina = LotteryModality::factory()->quina()->create();
 
     $file = makeUploadedQuinaSpreadsheet([
@@ -89,6 +92,8 @@ it('importa manualmente uma planilha da quina pela interface', function () {
 });
 
 it('ignora concursos já existentes no upload manual', function () {
+    $this->actingAs(User::factory()->create());
+
     $quina = LotteryModality::factory()->quina()->create();
 
     $file1 = makeUploadedQuinaSpreadsheet([
@@ -123,6 +128,8 @@ it('ignora concursos já existentes no upload manual', function () {
 });
 
 it('valida o arquivo no upload manual', function () {
+    $this->actingAs(User::factory()->create());
+
     $quina = LotteryModality::factory()->quina()->create();
 
     $response = $this->from(route('lottery.modalities.show', $quina))
@@ -130,4 +137,13 @@ it('valida o arquivo no upload manual', function () {
 
     $response->assertRedirect(route('lottery.modalities.show', $quina));
     $response->assertSessionHasErrors(['spreadsheet']);
+});
+
+
+it('redireciona visitante para o login ao tentar importar planilha', function () {
+    $quina = LotteryModality::factory()->quina()->create();
+
+    $response = $this->post(route('lottery.modalities.import-spreadsheet', $quina), []);
+
+    $response->assertRedirect(route('login'));
 });

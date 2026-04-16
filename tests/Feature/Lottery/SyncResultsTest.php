@@ -1,12 +1,15 @@
 <?php
 
 use App\Models\LotteryModality;
+use App\Models\User;
 use App\Services\Lottery\CaixaResultsSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
 it('can sync modality results from caixa through the dashboard action', function () {
+    $this->actingAs(User::factory()->create());
+
     $modality = LotteryModality::factory()->quina()->create();
 
     $service = Mockery::mock(CaixaResultsSyncService::class);
@@ -29,6 +32,8 @@ it('can sync modality results from caixa through the dashboard action', function
 });
 
 it('returns a friendly error when sync fails', function () {
+    $this->actingAs(User::factory()->create());
+
     $modality = LotteryModality::factory()->megaSena()->create();
 
     $service = Mockery::mock(CaixaResultsSyncService::class);
@@ -43,4 +48,13 @@ it('returns a friendly error when sync fails', function () {
 
     $response->assertRedirect("/lottery/modalities/{$modality->id}")
         ->assertSessionHas('error', 'A sincronização automática pela CAIXA está disponível apenas para a Quina nesta etapa.');
+});
+
+
+it('redirects guests to login when trying to sync caixa results', function () {
+    $modality = LotteryModality::factory()->quina()->create();
+
+    $response = $this->post("/lottery/modalities/{$modality->id}/sync-results");
+
+    $response->assertRedirect(route('login'));
 });

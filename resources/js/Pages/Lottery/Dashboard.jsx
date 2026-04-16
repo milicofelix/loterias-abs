@@ -1,229 +1,507 @@
-import { Link, router, usePage } from '@inertiajs/react';
-import { useMemo } from 'react';
+import { Link, router, useForm, usePage } from '@inertiajs/react';
+import { useMemo, useState } from 'react';
+import {
+    BarChart,
+    Bar,
+    CartesianGrid,
+    XAxis,
+    YAxis,
+    Tooltip,
+    ResponsiveContainer,
+} from 'recharts';
+import {
+    ActionLink,
+    HeroBanner,
+    LotteryPage,
+    MetricCard,
+    NumberBall,
+    SectionHeading,
+    SurfaceCard,
+    Tag,
+    lotteryPalette,
+} from './components/LotteryUi';
 
-function NumberBall({ number, active = true }) {
-    return (
-        <div
-            style={{
-                width: 46,
-                height: 46,
-                borderRadius: '9999px',
-                backgroundColor: active ? '#0c5a96' : '#fff',
-                border: active ? 'none' : '1px solid #d0d5dd',
-                color: active ? '#fff' : '#344054',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 700,
-            }}
-        >
-            {String(number).padStart(2, '0')}
-        </div>
-    );
-}
+const dataHojeISO = () => new Date().toISOString().slice(0, 10);
 
 export default function Dashboard({
     modality,
-    frequencies = {},
-    delays = {},
+    frequencies,
+    delays,
+    frequenciesLast10,
+    frequenciesLast20,
+    frequenciesLast50,
+    delaysLast10,
+    delaysLast20,
+    delaysLast50,
     recentDraws = [],
     totalDraws = 0,
     latestContestNumber = null,
+    suggestedNextContestNumber = 1,
     dashboardNarrative = null,
     latestDrawExplanation = null,
-    authRequiredActions = {},
 }) {
+    const [selectedWindow, setSelectedWindow] = useState('all');
     const { flash = {}, auth = {} } = usePage().props;
+    const importForm = useForm({ spreadsheet: null });
+    const manualResultForm = useForm({
+        contest_number: suggestedNextContestNumber || '',
+        draw_date: new Date().toISOString().slice(0, 10),
+        numbers: Array.from({ length: modality.draw_count }, () => ''),
+        observation: '',
+    });
 
-    const latestDraw = recentDraws[0] || null;
+    const selectedFrequencies = useMemo(() => {
+        switch (selectedWindow) {
+            case '10':
+                return frequenciesLast10;
+            case '20':
+                return frequenciesLast20;
+            case '50':
+                return frequenciesLast50;
+            default:
+                return frequencies;
+        }
+    }, [selectedWindow, frequencies, frequenciesLast10, frequenciesLast20, frequenciesLast50]);
 
-    const topFrequencies = useMemo(() => {
-        return Object.entries(frequencies || {})
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 10);
-    }, [frequencies]);
+    const selectedDelays = useMemo(() => {
+        switch (selectedWindow) {
+            case '10':
+                return delaysLast10;
+            case '20':
+                return delaysLast20;
+            case '50':
+                return delaysLast50;
+            default:
+                return delays;
+        }
+    }, [selectedWindow, delays, delaysLast10, delaysLast20, delaysLast50]);
 
-    const topDelays = useMemo(() => {
-        return Object.entries(delays || {})
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 10);
-    }, [delays]);
+    const topFrequencies = Object.entries(selectedFrequencies || {})
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8);
 
-    const quinaBlue = '#0c5a96';
-    const quinaBorder = '#d9e1ea';
-    const quinaMuted = '#667085';
-    const quinaBg = '#eef3f8';
+    const topDelays = Object.entries(selectedDelays || {})
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8);
+
+    const chartData = Object.entries(selectedFrequencies || {}).map(([number, total]) => ({
+        number: String(number).padStart(2, '0'),
+        total,
+    }));
+
+    const latestDraw = recentDraws.length > 0 ? recentDraws[0] : null;
+
+    const submitImport = (event) => {
+        event.preventDefault();
+
+        importForm.post(`/lottery/modalities/${modality.id}/import-spreadsheet`, {
+            preserveScroll: true,
+            forceFormData: true,
+            onSuccess: () => importForm.reset('spreadsheet'),
+        });
+    };
+
+
+    const updateManualNumber = (index, value) => {
+        const nextNumbers = [...manualResultForm.data.numbers];
+        nextNumbers[index] = value;
+        manualResultForm.setData('numbers', nextNumbers);
+    };
+
+    const submitManualResult = (event) => {
+        event.preventDefault();
+
+        manualResultForm.transform((data) => ({
+            ...data,
+            contest_number: Number(data.contest_number),
+            numbers: (data.numbers || []).map((value) => Number(value)),
+        }));
+
+        manualResultForm.post(`/lottery/modalities/${modality.id}/draws`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                manualResultForm.setData({
+                    contest_number: Number(manualResultForm.data.contest_number) + 1,
+                    draw_date: dataHojeISO(),
+                    numbers: Array.from({ length: modality.draw_count }, () => ''),
+                    observation: '',
+                });
+            },
+            onFinish: () => manualResultForm.transform((data) => data),
+        });
+    };
+
+    const windowOptions = [
+        { value: 'all', label: 'Histórico total' },
+        { value: '10', label: 'Últimos 10' },
+        { value: '20', label: 'Últimos 20' },
+        { value: '50', label: 'Últimos 50' },
+    ];
+
+    const recentNumbers = latestDraw?.numbers || [];
 
     return (
-        <div className="min-h-screen" style={{ backgroundColor: quinaBg }}>
-            <div className="max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-10 space-y-8">
-                <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <div style={{ color: quinaBlue, fontSize: 18, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.18em' }}>
-                            Resultado oficial
-                        </div>
-                        <div className="flex flex-col gap-2 md:flex-row md:items-end md:gap-4 mt-2">
-                            <h1 style={{ color: quinaBlue, fontSize: 'clamp(2.5rem, 5vw, 4rem)', fontWeight: 800, lineHeight: 1 }}>
-                                {modality.name}
-                            </h1>
-                            <div style={{ color: quinaMuted, fontSize: 'clamp(1.2rem, 2vw, 2rem)', fontWeight: 500, lineHeight: 1.1 }}>
-                                {latestContestNumber ? `Concurso ${latestContestNumber}` : ''}
-                            </div>
-                        </div>
-                        <p className="mt-3" style={{ color: quinaMuted, fontSize: 18, fontWeight: 500 }}>
-                            Resultados públicos. Para apostar, salvar combinações e usar análises inteligentes, entre na sua conta.
-                        </p>
+        <LotteryPage>
+            <div className="space-y-8 md:space-y-10">
+                <HeroBanner
+                    eyebrow="Resultado oficial"
+                    title={modality.name}
+                    contest={latestContestNumber ? `Concurso ${latestContestNumber}` : undefined}
+                    subtitle={
+                        auth?.user
+                            ? 'Acompanhe o resultado, explore o histórico e entre na sua área para gerar combinações mais bonitas e inteligentes.'
+                            : 'Resultados públicos com uma apresentação mais rica. Para salvar combinações e apostar, entre na sua conta.'
+                    }
+                >
+                    <ActionLink href={`/lottery/modalities/${modality.id}/history`}>
+                        Ver histórico completo
+                    </ActionLink>
+                    <ActionLink href={`/lottery/modalities/${modality.id}/play`} variant="secondary">
+                        Gerar e analisar jogo
+                    </ActionLink>
+                    <ActionLink
+                        href={auth?.user ? `/lottery/modalities/${modality.id}/bets` : '/login'}
+                        variant="secondary"
+                    >
+                        {auth?.user ? 'Minha área' : 'Entrar'}
+                    </ActionLink>
+                </HeroBanner>
+
+                {flash.success ? (
+                    <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4 font-semibold text-emerald-700">
+                        {flash.success}
                     </div>
+                ) : null}
 
-                    <div className="flex gap-3 flex-wrap">
-                        {auth?.user ? (
-                            <>
-                                <Link href={`/lottery/modalities/${modality.id}/combination-history`} className="transition hover:opacity-95" style={{ backgroundColor: '#fff', color: quinaBlue, padding: '14px 22px', borderRadius: 16, fontWeight: 700, border: `1px solid ${quinaBorder}` }}>
-                                    Minha área
-                                </Link>
-                                <Link href={`/lottery/modalities/${modality.id}/play`} className="transition hover:opacity-95" style={{ backgroundColor: quinaBlue, color: '#fff', padding: '14px 22px', borderRadius: 16, fontWeight: 700 }}>
-                                    Gerar e analisar jogo
-                                </Link>
-                                <Link href="/logout" method="post" as="button" className="transition hover:opacity-95" style={{ backgroundColor: '#fff', color: quinaBlue, padding: '14px 22px', borderRadius: 16, fontWeight: 700, border: `1px solid ${quinaBorder}` }}>
-                                    Sair
-                                </Link>
-                            </>
-                        ) : (
-                            <>
-                                <Link href="/login" className="transition hover:opacity-95" style={{ backgroundColor: '#fff', color: quinaBlue, padding: '14px 22px', borderRadius: 16, fontWeight: 700, border: `1px solid ${quinaBorder}` }}>
-                                    Entrar
-                                </Link>
-                                <Link href="/register" className="transition hover:opacity-95" style={{ backgroundColor: '#fff', color: quinaBlue, padding: '14px 22px', borderRadius: 16, fontWeight: 700, border: `1px solid ${quinaBorder}` }}>
-                                    Criar conta
-                                </Link>
-                                <Link href={authRequiredActions.play ? '/login' : `/lottery/modalities/${modality.id}/play`} className="transition hover:opacity-95" style={{ backgroundColor: quinaBlue, color: '#fff', padding: '14px 22px', borderRadius: 16, fontWeight: 700 }}>
-                                    Entrar para apostar e analisar
-                                </Link>
-                            </>
-                        )}
+                {flash.error ? (
+                    <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 font-semibold text-rose-700">
+                        {flash.error}
                     </div>
-                </header>
+                ) : null}
 
-                {flash.success ? <div className="rounded-3xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-emerald-700 font-semibold">{flash.success}</div> : null}
-                {flash.error ? <div className="rounded-3xl border border-red-200 bg-red-50 px-5 py-4 text-red-700 font-semibold">{flash.error}</div> : null}
+                <div className="grid gap-4 md:grid-cols-3">
+                    <MetricCard label="Total de concursos" value={totalDraws} />
+                    <MetricCard label="Concurso mais recente" value={latestContestNumber ?? '—'} />
+                    <MetricCard
+                        label="Faixa da modalidade"
+                        value={`${modality.min_number}-${modality.max_number}`}
+                        helper={`${modality.draw_count} dezenas por sorteio`}
+                    />
+                </div>
 
-                <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-                    <div className="rounded-3xl border bg-white p-5 md:p-7" style={{ borderColor: quinaBorder }}>
-                        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                            <div>
-                                <h2 className="text-2xl font-extrabold" style={{ color: quinaBlue }}>Último resultado</h2>
-                                <p className="mt-1 text-slate-500">Concurso atual, números sorteados e visão pública do histórico.</p>
-                            </div>
-                            <Link href={`/lottery/modalities/${modality.id}/history`} className="rounded-2xl border bg-white px-4 py-3 font-semibold" style={{ borderColor: quinaBorder }}>
-                                Ver histórico completo
-                            </Link>
-                        </div>
+                <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+                    <SurfaceCard>
+                        <SectionHeading
+                            eyebrow="Último resultado"
+                            title={`Concurso ${latestDraw?.contest_number ?? latestContestNumber ?? '—'}`}
+                            description="Concurso atual, números sorteados e leitura rápida automatizada do resultado oficial."
+                            aside={
+                                <Link
+                                    href={`/lottery/modalities/${modality.id}/history`}
+                                    className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border px-4 py-2 text-sm font-semibold"
+                                    style={{ borderColor: lotteryPalette.line, color: lotteryPalette.blue }}
+                                >
+                                    Ver histórico completo
+                                </Link>
+                            }
+                        />
 
                         {latestDraw ? (
-                            <div className="mt-6 rounded-3xl border p-5" style={{ borderColor: quinaBorder, backgroundColor: '#f8fbff' }}>
-                                <div className="text-lg font-semibold text-slate-700">Concurso {latestDraw.contest_number}</div>
-                                <div className="mt-1 text-sm text-slate-500">{latestDraw.draw_date || 'Data não informada'}</div>
-                                <div className="mt-5 flex flex-wrap gap-3">
-                                    {latestDraw.numbers.map((number) => <NumberBall key={number} number={number} />)}
+                            <div className="space-y-5 rounded-[26px] border p-5 md:p-7" style={{ borderColor: lotteryPalette.line, background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)' }}>
+                                <div className="text-sm font-semibold uppercase tracking-[0.18em]" style={{ color: lotteryPalette.muted }}>
+                                    {latestDraw.draw_date}
                                 </div>
+
+                               <div className="flex flex-wrap items-center gap-3">
+                                    {recentNumbers.map((number) => (
+                                        <NumberBall key={number} number={number} size="lg" />
+                                    ))}
+                                </div>
+
                                 {latestDrawExplanation ? (
-                                    <div className="mt-5 rounded-2xl border px-4 py-3 text-slate-600" style={{ borderColor: quinaBorder }}>
-                                        {typeof latestDrawExplanation === 'string' ? latestDrawExplanation : latestDrawExplanation.summary || latestDrawExplanation.headline || 'Explicação do último sorteio disponível.'}
+                                    <div
+                                        className="rounded-[22px] border px-5 py-4 text-base leading-8 md:text-lg"
+                                        style={{ borderColor: lotteryPalette.line, backgroundColor: lotteryPalette.soft, color: '#23354d' }}
+                                    >
+                                        {latestDrawExplanation && (
+                                            <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm">
+                                                {latestDrawExplanation.summary && (
+                                                    <p className="text-base leading-7 text-slate-700">
+                                                        {latestDrawExplanation.summary}
+                                                    </p>
+                                                )}
+
+                                                {Array.isArray(latestDrawExplanation.highlights) && latestDrawExplanation.highlights.length > 0 && (
+                                                    <ul className="mt-4 space-y-2 text-sm text-slate-600">
+                                                        {latestDrawExplanation.highlights.map((item, index) => (
+                                                            <li key={index}>• {item}</li>
+                                                        ))}
+                                                    </ul>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 ) : null}
                             </div>
                         ) : (
-                            <div className="mt-6 rounded-3xl border p-5 text-slate-500" style={{ borderColor: quinaBorder }}>
-                                Ainda não há sorteios cadastrados para esta modalidade.
+                            <div className="rounded-[24px] border px-5 py-8" style={{ borderColor: lotteryPalette.line, color: lotteryPalette.muted }}>
+                                Ainda não há resultado carregado para esta modalidade.
                             </div>
                         )}
-                    </div>
+                    </SurfaceCard>
 
-                    <div className="rounded-3xl border bg-white p-5 md:p-7" style={{ borderColor: quinaBorder }}>
-                        <h2 className="text-2xl font-extrabold" style={{ color: quinaBlue }}>Resumo rápido</h2>
-                        <div className="mt-5 grid gap-4">
-                            <div className="rounded-2xl border p-4" style={{ borderColor: quinaBorder }}>
-                                <div className="text-sm text-slate-500">Total de concursos</div>
-                                <div className="mt-1 text-3xl font-extrabold text-slate-800">{totalDraws}</div>
-                            </div>
-                            <div className="rounded-2xl border p-4" style={{ borderColor: quinaBorder }}>
-                                <div className="text-sm text-slate-500">Concurso mais recente</div>
-                                <div className="mt-1 text-3xl font-extrabold text-slate-800">{latestContestNumber || '—'}</div>
-                            </div>
-                            {dashboardNarrative ? (
-                                <div className="rounded-2xl border p-4 text-slate-600" style={{ borderColor: quinaBorder }}>
-                                    {typeof dashboardNarrative === 'string' ? dashboardNarrative : dashboardNarrative.summary || dashboardNarrative.headline || 'Resumo inteligente disponível.'}
-                                </div>
-                            ) : null}
-                        </div>
-                    </div>
-                </section>
+                    <SurfaceCard>
+                        <SectionHeading
+                            eyebrow="Ações rápidas"
+                            title="Gestão da modalidade"
+                            description={
+                                auth?.user
+                                    ? 'Importe planilhas oficiais, sincronize novos concursos e mantenha o painel sempre atualizado.'
+                                    : 'Importação, sincronização com a CAIXA e cadastro manual de resultados ficam disponíveis apenas na área autenticada.'
+                            }
+                        />
 
-                <section className="grid gap-6 lg:grid-cols-2">
-                    <div className="rounded-3xl border bg-white p-5 md:p-7" style={{ borderColor: quinaBorder }}>
-                        <h2 className="text-2xl font-extrabold" style={{ color: quinaBlue }}>Números mais frequentes</h2>
-                        <div className="mt-5 space-y-3">
-                            {topFrequencies.length === 0 ? (
-                                <div className="text-slate-500">Sem dados suficientes.</div>
-                            ) : topFrequencies.map(([number, total]) => (
-                                <div key={number} className="flex items-center justify-between rounded-2xl border px-4 py-3" style={{ borderColor: quinaBorder }}>
-                                    <div className="flex items-center gap-3">
-                                        <NumberBall number={number} />
-                                        <span className="font-semibold text-slate-700">Número {String(number).padStart(2, '0')}</span>
-                                    </div>
-                                    <span className="font-bold text-slate-800">{total}x</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="rounded-3xl border bg-white p-5 md:p-7" style={{ borderColor: quinaBorder }}>
-                        <h2 className="text-2xl font-extrabold" style={{ color: quinaBlue }}>Números mais atrasados</h2>
-                        <div className="mt-5 space-y-3">
-                            {topDelays.length === 0 ? (
-                                <div className="text-slate-500">Sem dados suficientes.</div>
-                            ) : topDelays.map(([number, total]) => (
-                                <div key={number} className="flex items-center justify-between rounded-2xl border px-4 py-3" style={{ borderColor: quinaBorder }}>
-                                    <div className="flex items-center gap-3">
-                                        <NumberBall number={number} active={false} />
-                                        <span className="font-semibold text-slate-700">Número {String(number).padStart(2, '0')}</span>
-                                    </div>
-                                    <span className="font-bold text-slate-800">{total} concursos</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </section>
-
-                <section className="rounded-3xl border bg-white p-5 md:p-7" style={{ borderColor: quinaBorder }}>
-                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                        <div>
-                            <h2 className="text-2xl font-extrabold" style={{ color: quinaBlue }}>Últimos concursos</h2>
-                            <p className="mt-1 text-slate-500">A parte pública do sistema continua focada nos resultados oficiais.</p>
-                        </div>
                         {auth?.user ? (
-                            <Link href={`/lottery/modalities/${modality.id}/bets`} className="rounded-2xl px-4 py-3 font-semibold text-white" style={{ backgroundColor: quinaBlue }}>
-                                Minhas apostas
-                            </Link>
-                        ) : null}
-                    </div>
-                    <div className="mt-6 space-y-4">
-                        {recentDraws.map((draw) => (
-                            <div key={draw.id} className="rounded-2xl border p-4" style={{ borderColor: quinaBorder }}>
-                                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                                    <div>
-                                        <div className="font-semibold text-slate-800">Concurso {draw.contest_number}</div>
-                                        <div className="text-sm text-slate-500">{draw.draw_date || 'Data não informada'}</div>
+                        <div className="space-y-4">
+                            {modality.code === 'quina' ? (
+                                <button
+                                    type="button"
+                                    onClick={() => router.post(`/lottery/modalities/${modality.id}/sync-results`)}
+                                    className="inline-flex w-full items-center justify-center rounded-2xl px-5 py-4 text-base font-semibold text-white shadow-[0_18px_30px_rgba(12,90,150,0.18)]"
+                                    style={{ background: 'linear-gradient(180deg, #1670b6 0%, #0c5a96 100%)' }}
+                                >
+                                    Sincronizar resultados da CAIXA
+                                </button>
+                            ) : null}
+
+                            <form onSubmit={submitImport} className="rounded-[24px] border p-4 md:p-5" style={{ borderColor: lotteryPalette.line, backgroundColor: '#fafcff' }}>
+                                <label className="block text-sm font-semibold" style={{ color: lotteryPalette.blueDark }}>
+                                    Enviar planilha oficial
+                                </label>
+                                <p className="mt-1 text-sm" style={{ color: lotteryPalette.muted }}>
+                                    Aceita arquivos XLSX e XLS para importar concursos da Quina.
+                                </p>
+                                <input
+                                    type="file"
+                                    accept=".xlsx,.xls"
+                                    onChange={(event) => importForm.setData('spreadsheet', event.target.files?.[0] || null)}
+                                    className="mt-4 block w-full rounded-2xl border bg-white px-4 py-3 text-sm"
+                                    style={{ borderColor: lotteryPalette.line }}
+                                />
+                                {importForm.errors.spreadsheet ? (
+                                    <div className="mt-2 text-sm font-medium text-rose-600">
+                                        {importForm.errors.spreadsheet}
                                     </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {draw.numbers.map((number) => <NumberBall key={`${draw.id}-${number}`} number={number} />)}
+                                ) : null}
+                                <button
+                                    type="submit"
+                                    className="mt-4 inline-flex w-full items-center justify-center rounded-2xl border px-5 py-3 font-semibold"
+                                    style={{ borderColor: lotteryPalette.line, color: lotteryPalette.blue, backgroundColor: '#fff' }}
+                                    disabled={importForm.processing}
+                                >
+                                    {importForm.processing ? 'Importando...' : 'Importar planilha'}
+                                </button>
+                            </form>
+
+                            <form onSubmit={submitManualResult} className="rounded-[24px] border p-4 md:p-5" style={{ borderColor: lotteryPalette.line, backgroundColor: '#fafcff' }}>
+                                <label className="block text-sm font-semibold" style={{ color: lotteryPalette.blueDark }}>
+                                    Cadastrar resultado individual
+                                </label>
+                                <p className="mt-1 text-sm" style={{ color: lotteryPalette.muted }}>
+                                    Lance um concurso manualmente com os mesmos campos essenciais do fluxo oficial. Sugestão de próximo concurso: {suggestedNextContestNumber}.
+                                </p>
+
+                                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                    <div>
+                                        <label className="block text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: lotteryPalette.muted }}>
+                                            Concurso
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={manualResultForm.data.contest_number}
+                                            onChange={(event) => manualResultForm.setData('contest_number', event.target.value)}
+                                            className="mt-2 block w-full rounded-2xl border bg-white px-4 py-3 text-sm"
+                                            style={{ borderColor: lotteryPalette.line }}
+                                        />
+                                        {manualResultForm.errors.contest_number ? <div className="mt-2 text-sm font-medium text-rose-600">{manualResultForm.errors.contest_number}</div> : null}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: lotteryPalette.muted }}>
+                                            Data do sorteio
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={manualResultForm.data.draw_date}
+                                            onChange={(event) => manualResultForm.setData('draw_date', event.target.value)}
+                                            className="mt-2 block w-full rounded-2xl border bg-white px-4 py-3 text-sm"
+                                            style={{ borderColor: lotteryPalette.line }}
+                                        />
+                                        {manualResultForm.errors.draw_date ? <div className="mt-2 text-sm font-medium text-rose-600">{manualResultForm.errors.draw_date}</div> : null}
                                     </div>
                                 </div>
+
+                                <div className="mt-4">
+                                    <label className="block text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: lotteryPalette.muted }}>
+                                        Números sorteados
+                                    </label>
+                                    <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+                                        {manualResultForm.data.numbers.map((value, index) => (
+                                            <div key={index}>
+                                                <input
+                                                    type="number"
+                                                    min={modality.min_number}
+                                                    max={modality.max_number}
+                                                    value={value}
+                                                    onChange={(event) => updateManualNumber(index, event.target.value)}
+                                                    placeholder={`Bola ${index + 1}`}
+                                                    className="block w-full rounded-2xl border bg-white px-4 py-3 text-sm"
+                                                    style={{ borderColor: lotteryPalette.line }}
+                                                />
+                                                {manualResultForm.errors[`numbers.${index}`] ? <div className="mt-2 text-sm font-medium text-rose-600">{manualResultForm.errors[`numbers.${index}`]}</div> : null}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {manualResultForm.errors.numbers ? <div className="mt-2 text-sm font-medium text-rose-600">{manualResultForm.errors.numbers}</div> : null}
+                                </div>
+
+                                <div className="mt-4">
+                                    <label className="block text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: lotteryPalette.muted }}>
+                                        Observação (opcional)
+                                    </label>
+                                    <textarea
+                                        value={manualResultForm.data.observation}
+                                        onChange={(event) => manualResultForm.setData('observation', event.target.value)}
+                                        rows={3}
+                                        className="mt-2 block w-full rounded-2xl border bg-white px-4 py-3 text-sm"
+                                        style={{ borderColor: lotteryPalette.line }}
+                                        placeholder="Ex.: concurso lançado manualmente para correção interna."
+                                    />
+                                    {manualResultForm.errors.observation ? <div className="mt-2 text-sm font-medium text-rose-600">{manualResultForm.errors.observation}</div> : null}
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    className="mt-4 inline-flex w-full items-center justify-center rounded-2xl border px-5 py-3 font-semibold"
+                                    style={{ borderColor: lotteryPalette.line, color: lotteryPalette.blue, backgroundColor: '#fff' }}
+                                    disabled={manualResultForm.processing}
+                                >
+                                    {manualResultForm.processing ? 'Salvando resultado...' : 'Cadastrar resultado manual'}
+                                </button>
+                            </form>
+                        </div>
+                        ) : (
+                            <div className="rounded-[24px] border p-5 md:p-6" style={{ borderColor: lotteryPalette.line, background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)' }}>
+                                <div className="text-base leading-7" style={{ color: lotteryPalette.muted }}>
+                                    Para importar planilhas, sincronizar resultados da CAIXA e cadastrar concursos manualmente, entre em uma conta autorizada.
+                                </div>
+                                <div className="mt-4">
+                                    <ActionLink href="/login">Entrar para gerenciar resultados</ActionLink>
+                                </div>
                             </div>
+                        )}
+                    </SurfaceCard>
+                </div>
+
+                <SurfaceCard>
+                    <SectionHeading
+                        eyebrow="Resumo rápido"
+                        title="Leitura automática da Quina"
+                        description={
+                            typeof dashboardNarrative === 'string'
+                                ? dashboardNarrative
+                                : dashboardNarrative?.summary ||
+                                dashboardNarrative?.headline ||
+                                'Frequências recentes, atrasos e comportamento estatístico organizados de forma mais visual.'
+                        }
+                    />
+
+                    <div className="flex flex-wrap gap-3">
+                        {windowOptions.map((option) => (
+                            <Tag
+                                key={option.value}
+                                active={selectedWindow === option.value}
+                                onClick={() => setSelectedWindow(option.value)}
+                            >
+                                {option.label}
+                            </Tag>
                         ))}
                     </div>
-                </section>
+
+                    <div className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+                        <div className="rounded-[24px] border p-4 md:p-5" style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff' }}>
+                            <div className="mb-4 flex items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-sm font-semibold uppercase tracking-[0.18em]" style={{ color: lotteryPalette.muted }}>
+                                        Frequência visual
+                                    </div>
+                                    <div className="mt-1 text-xl font-bold" style={{ color: lotteryPalette.blueDark }}>
+                                        Números mais presentes
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="h-[320px] md:h-[360px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={chartData}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#e4edf5" />
+                                        <XAxis dataKey="number" tick={{ fill: '#667085', fontSize: 12 }} />
+                                        <YAxis tick={{ fill: '#667085', fontSize: 12 }} />
+                                        <Tooltip />
+                                        <Bar dataKey="total" fill="#0c5a96" radius={[8, 8, 0, 0]} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="rounded-[24px] border p-5" style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff' }}>
+                                <div className="text-sm font-semibold uppercase tracking-[0.18em]" style={{ color: lotteryPalette.muted }}>
+                                    Frequência recente em destaque
+                                </div>
+                                <div className="mt-4 space-y-3">
+                                    {topFrequencies.map(([number, total]) => (
+                                        <div key={number} className="flex items-center justify-between gap-3 rounded-2xl border px-4 py-3" style={{ borderColor: lotteryPalette.line }}>
+                                            <div className="flex items-center gap-3">
+                                                <NumberBall number={number} size="sm" />
+                                                <div className="font-semibold" style={{ color: lotteryPalette.blueDark }}>
+                                                    Número {String(number).padStart(2, '0')}
+                                                </div>
+                                            </div>
+                                            <div className="text-lg font-bold" style={{ color: lotteryPalette.blue }}>
+                                                {total}x
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="rounded-[24px] border p-5" style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff' }}>
+                                <div className="text-sm font-semibold uppercase tracking-[0.18em]" style={{ color: lotteryPalette.muted }}>
+                                    Atrasos relevantes
+                                </div>
+                                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                    {topDelays.map(([number, total]) => (
+                                        <div key={number} className="rounded-2xl border px-4 py-3" style={{ borderColor: lotteryPalette.line, background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)' }}>
+                                            <div className="flex items-center gap-3">
+                                                <NumberBall number={number} size="sm" subtle />
+                                                <div>
+                                                    <div className="font-bold" style={{ color: lotteryPalette.blueDark }}>
+                                                        Número {String(number).padStart(2, '0')}
+                                                    </div>
+                                                    <div className="text-sm" style={{ color: lotteryPalette.muted }}>
+                                                        {total} concursos sem aparecer
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </SurfaceCard>
             </div>
-        </div>
+        </LotteryPage>
     );
 }

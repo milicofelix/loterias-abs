@@ -20,6 +20,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
 use InvalidArgumentException;
 use App\Services\Lottery\SmartGameGeneratorGatewayService;
+use App\Services\Lottery\HistoricalPrizeSummaryService;
+use App\Services\Lottery\ManualDrawCreationService;
 
 class ModalityController extends Controller
 {
@@ -140,6 +142,7 @@ class ModalityController extends Controller
             'recentDraws' => $recentDraws,
             'totalDraws' => $totalDraws,
             'latestContestNumber' => $latestDraw?->contest_number,
+            'suggestedNextContestNumber' => $latestDraw ? ((int) $latestDraw->contest_number + 1) : 1,
             'dashboardNarrative' => $dashboardNarrative,
             'latestDrawExplanation' => $latestDrawExplanation,
         ]);
@@ -166,13 +169,15 @@ class ModalityController extends Controller
     public function generateSmart(
     Request $request,
     LotteryModality $modality,
-    SmartGameGeneratorGatewayService $generator
+    SmartGameGeneratorGatewayService $generator,
+    HistoricalPrizeSummaryService $historicalPrizeSummaryService
     ): JsonResponse {
         try {
             $games = $generator->generate($modality, $request->all());
+            $gamesWithHistory = $this->attachHistoricalPrizeSummaryToGames($modality, $games, $historicalPrizeSummaryService);
 
             return response()->json([
-                'games' => $games,
+                'games' => $gamesWithHistory,
             ]);
         } catch (InvalidArgumentException $e) {
             return response()->json([
@@ -205,6 +210,30 @@ class ModalityController extends Controller
                 'message' => $e->getMessage(),
             ], 422);
         }
+    }
+
+
+    /**
+     * @param array<int, array<string, mixed>> $games
+     * @return array<int, array<string, mixed>>
+     */
+    protected function attachHistoricalPrizeSummaryToGames(
+        LotteryModality $modality,
+        array $games,
+        HistoricalPrizeSummaryService $historicalPrizeSummaryService
+    ): array {
+        $gamesNumbers = array_map(
+            fn (array $game) => array_map(static fn ($number) => (int) $number, (array) ($game['numbers'] ?? [])),
+            $games
+        );
+
+        $summaries = $historicalPrizeSummaryService->analyzeBatch($modality, $gamesNumbers);
+
+        return array_map(function (array $game, int $index) use ($summaries) {
+            return array_merge($game, [
+                'historical_prize_summary' => $summaries[$index]['historical_prize_summary'] ?? null,
+            ]);
+        }, $games, array_keys($games));
     }
 
 
@@ -271,6 +300,47 @@ class ModalityController extends Controller
             return back()->with('error', $e->getMessage());
         } catch (\Throwable $e) {
             return back()->with('error', 'Não foi possível sincronizar os resultados da CAIXA.');
+        }
+    }
+
+
+    public function storeManualDraw(
+        Request $request,
+        LotteryModality $modality,
+        ManualDrawCreationService $manualDrawCreationService
+    ): RedirectResponse {
+        $validated = $request->validate([
+            'contest_number' => ['required', 'integer', 'min:1'],
+            'draw_date' => ['required', 'date'],
+            'numbers' => ['required', 'array', 'size:' . (int) $modality->draw_count],
+            'numbers.*' => ['required', 'integer', 'between:' . (int) $modality->min_number . ',' . (int) $modality->max_number],
+            'observation' => ['nullable', 'string', 'max:1000'],
+        ], [
+            'contest_number.required' => 'Informe o número do concurso.',
+            'contest_number.integer' => 'O número do concurso deve ser numérico.',
+            'contest_number.min' => 'O número do concurso deve ser maior que zero.',
+            'draw_date.required' => 'Informe a data do sorteio.',
+            'draw_date.date' => 'Informe uma data de sorteio válida.',
+            'numbers.required' => 'Informe os números sorteados.',
+            'numbers.array' => 'Os números sorteados são inválidos.',
+            'numbers.size' => sprintf('Informe exatamente %d números para %s.', $modality->draw_count, $modality->name),
+            'numbers.*.required' => 'Preencha todos os números do resultado.',
+            'numbers.*.integer' => 'Todos os números do resultado devem ser numéricos.',
+            'numbers.*.between' => sprintf('Cada número deve estar entre %d e %d.', $modality->min_number, $modality->max_number),
+            'observation.max' => 'A observação pode ter no máximo 1000 caracteres.',
+        ]);
+
+        try {
+            $manualDrawCreationService->create($modality, $validated);
+
+            return back()->with('success', sprintf(
+                'Resultado do concurso %d cadastrado com sucesso.',
+                $validated['contest_number']
+            ));
+        } catch (InvalidArgumentException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            return back()->withInput()->with('error', 'Não foi possível cadastrar o resultado manualmente.');
         }
     }
 
@@ -432,6 +502,7 @@ class ModalityController extends Controller
             'filters' => [
                 'days' => $days,
             ],
+            'dayOptions' => [7, 15, 30, 60, 90],
         ]);
     }
 

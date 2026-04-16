@@ -88,6 +88,12 @@ it('pode gerar jogos inteligentes por meio do endpoint', function () {
                     'classification',
                     'profile',
                     'reason',
+                    'historical_prize_summary' => [
+                        'best_hit',
+                        'ever_prized',
+                        'hit_counts',
+                        'total_prized_occurrences',
+                    ],
                 ],
             ],
         ]);
@@ -194,6 +200,15 @@ it('pode analisar números com comparação histórica por meio do ponto final.'
                 'summary',
                 'strengths',
                 'warnings',
+            ],
+            'historical_prize_summary' => [
+                'best_hit',
+                'ever_prized',
+                'contest_count_checked',
+                'hit_counts',
+                'last_occurrence',
+                'sample_occurrences',
+                'total_prized_occurrences',
             ],
             'profile_comparison' => [
                 'name',
