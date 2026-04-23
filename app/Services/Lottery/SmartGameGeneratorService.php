@@ -110,10 +110,6 @@ class SmartGameGeneratorService
         int $games,
         int $candidatePool
     ): void {
-        if ($modality->code !== 'quina') {
-            throw new InvalidArgumentException('A geração inteligente está disponível apenas para a Quina nesta etapa.');
-        }
-
         if (! in_array($strategy, ['balanced', 'hot'], true)) {
             throw new InvalidArgumentException('Estratégia inválida. Utilize balanced ou hot.');
         }
@@ -140,11 +136,14 @@ class SmartGameGeneratorService
     ): array {
         $drawCount = (int) $modality->draw_count;
 
+        $hotTake = max($drawCount + 4, (int) ceil($drawCount * 1.8));
+        $warmTake = max($drawCount + 8, (int) ceil($drawCount * 2.5));
+
         if ($strategy === 'hot') {
             $hotBucket = collect($frequencies)
                 ->sortDesc()
                 ->keys()
-                ->take(24)
+                ->take(min($hotTake, (int) $modality->max_number))
                 ->map(fn ($number) => (int) $number)
                 ->values()
                 ->all();
@@ -152,14 +151,14 @@ class SmartGameGeneratorService
             $warmBucket = collect($frequencies)
                 ->sortDesc()
                 ->keys()
-                ->take(45)
+                ->take(min($warmTake, (int) $modality->max_number))
                 ->map(fn ($number) => (int) $number)
                 ->values()
                 ->all();
 
             return $this->pickUniqueNumbers([
-                ['pool' => $hotBucket, 'count' => min(3, $drawCount)],
-                ['pool' => $warmBucket, 'count' => min(1, $drawCount)],
+                ['pool' => $hotBucket, 'count' => min($drawCount, max(3, (int) round($drawCount * 0.45)))],
+                ['pool' => $warmBucket, 'count' => min($drawCount, max(1, (int) round($drawCount * 0.20)))],
                 ['pool' => range($modality->min_number, $modality->max_number), 'count' => $drawCount],
             ], $drawCount, $modality);
         }
@@ -167,7 +166,7 @@ class SmartGameGeneratorService
         $hotBucket = collect($frequencies)
             ->sortDesc()
             ->keys()
-            ->take(20)
+            ->take(min($hotTake, (int) $modality->max_number))
             ->map(fn ($number) => (int) $number)
             ->values()
             ->all();
@@ -175,7 +174,7 @@ class SmartGameGeneratorService
         $delayBucket = collect($delays)
             ->sortDesc()
             ->keys()
-            ->take(20)
+            ->take(min($hotTake, (int) $modality->max_number))
             ->map(fn ($number) => (int) $number)
             ->values()
             ->all();
@@ -183,8 +182,8 @@ class SmartGameGeneratorService
         $neutralBucket = range($modality->min_number, $modality->max_number);
 
         return $this->pickUniqueNumbers([
-            ['pool' => $hotBucket, 'count' => 2],
-            ['pool' => $delayBucket, 'count' => 1],
+            ['pool' => $hotBucket, 'count' => min($drawCount, max(2, (int) round($drawCount * 0.35)))],
+            ['pool' => $delayBucket, 'count' => min($drawCount, max(1, (int) round($drawCount * 0.15)))],
             ['pool' => $neutralBucket, 'count' => $drawCount],
         ], $drawCount, $modality);
     }
@@ -244,25 +243,29 @@ class SmartGameGeneratorService
         $distribution = array_values($pattern['range_distribution']);
         $maxBucket = $distribution !== [] ? max($distribution) : 0;
 
-        if ($evenCount < 1 || $evenCount > $modality->draw_count - 1) {
+        $drawCount = (int) $modality->draw_count;
+        $minEven = max(1, (int) floor($drawCount * 0.20));
+        $maxEven = min($drawCount - 1, (int) ceil($drawCount * 0.80));
+
+        if ($evenCount < $minEven || $evenCount > $maxEven) {
             return false;
         }
 
-        if ($this->longestConsecutiveRun($numbers) >= 4) {
+        if ($this->longestConsecutiveRun($numbers) >= max(4, (int) ceil($drawCount / 3))) {
             return false;
         }
 
-        if ($maxBucket >= 4) {
+        if ($maxBucket > ((int) ceil($drawCount / 5) + 2)) {
             return false;
         }
 
         $historicalSum = (float) ($historicalReference['sum'] ?? 0);
-        if ($historicalSum > 0 && abs($sum - $historicalSum) > 45) {
+        if ($historicalSum > 0 && abs($sum - $historicalSum) > max(15, $drawCount * 4)) {
             return false;
         }
 
         $historicalRange = (float) ($historicalReference['range'] ?? 0);
-        if ($historicalRange > 0 && abs($range - $historicalRange) > 25) {
+        if ($historicalRange > 0 && abs($range - $historicalRange) > max(10, $drawCount * 2)) {
             return false;
         }
 
@@ -433,19 +436,21 @@ class SmartGameGeneratorService
         $distribution = array_values($pattern['range_distribution'] ?? []);
         $maxBucket = $distribution !== [] ? max($distribution) : 0;
 
-        if ($evenCount === 0 || $evenCount === 5) {
-            $score -= 35;
+        $totalSelected = max(1, $evenCount + ((int) ($pattern['odd_count'] ?? 0)));
+        $minEven = max(1, (int) floor($totalSelected * 0.20));
+        $maxEven = min($totalSelected - 1, (int) ceil($totalSelected * 0.80));
+
+        if ($evenCount < $minEven || $evenCount > $maxEven) {
+            $score -= 25;
         }
 
-        if ($consecutiveCount >= 2) {
+        if ($consecutiveCount >= max(2, (int) ceil($totalSelected / 6))) {
             $score -= 15;
         }
 
-        if ($maxBucket >= 4) {
+        if ($maxBucket > ((int) ceil($totalSelected / 5) + 2)) {
             $score -= 20;
-        }
-
-        if ($maxBucket === 3) {
+        } elseif ($maxBucket > ((int) ceil($totalSelected / 5) + 1)) {
             $score -= 8;
         }
 

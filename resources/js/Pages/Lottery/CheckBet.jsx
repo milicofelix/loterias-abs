@@ -17,6 +17,8 @@ function Ball({ number, active = false }) {
 
 export default function CheckBet({ modality, historyItem, officialResult, checkResult }) {
     const hits = checkResult?.hits || [];
+    const prizeLabel = checkResult?.prize_label;
+    const isPrized = Boolean(checkResult?.is_prized);
 
     return (
         <div className="max-w-6xl mx-auto p-6 space-y-8">
@@ -67,6 +69,9 @@ export default function CheckBet({ modality, historyItem, officialResult, checkR
                         </div>
                         <div className="text-2xl text-slate-700">
                             Acertos: <strong>{checkResult.hit_count === 0 ? 'nenhum' : `${checkResult.hit_count} ${checkResult.hit_count === 1 ? 'número' : 'números'}`}</strong>
+                        </div>
+                        <div className={`rounded-2xl border px-4 py-3 text-base font-semibold ${isPrized ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                            {isPrized ? `Faixa premiável identificada: ${prizeLabel}.` : 'Este jogo não atingiu faixa premiável nesse concurso.'}
                         </div>
                     </div>
                 </div>

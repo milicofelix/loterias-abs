@@ -291,3 +291,37 @@ it('Pode exibir janelas de frequência e atraso recentes no painel de controle (
         ->where('latestContestNumber', 12)
     );
 });
+
+it('pode gerar jogos inteligentes para lotofacil usando o gerador local', function () {
+    $lotofacil = LotteryModality::factory()->lotofacil()->create();
+
+    foreach (range(1, 8) as $contest) {
+        $draw = Draw::create([
+            'lottery_modality_id' => $lotofacil->id,
+            'contest_number' => $contest,
+            'draw_date' => now()->subDays(8 - $contest)->toDateString(),
+            'metadata' => null,
+        ]);
+
+        foreach (range(1 + (($contest - 1) % 5), 15 + (($contest - 1) % 5)) as $number) {
+            DrawNumber::create([
+                'draw_id' => $draw->id,
+                'number' => $number,
+            ]);
+        }
+    }
+
+    $response = $this->postJson("/lottery/modalities/{$lotofacil->id}/generate-smart", [
+        'strategy' => 'balanced',
+        'games' => 2,
+        'candidate_pool' => 120,
+    ]);
+
+    $response->assertOk()
+        ->assertJsonCount(2, 'games');
+
+    $games = $response->json('games');
+
+    expect($games[0]['numbers'])->toHaveCount(15)
+        ->and($games[0]['historical_prize_summary'])->toBeArray();
+});

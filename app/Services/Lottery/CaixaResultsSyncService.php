@@ -3,7 +3,7 @@
 namespace App\Services\Lottery;
 
 use App\Models\LotteryModality;
-use App\Services\Lottery\Importers\QuinaSpreadsheetImporter;
+use App\Services\Lottery\Importers\CaixaSpreadsheetImporter;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -11,20 +11,21 @@ class CaixaResultsSyncService
 {
     public function __construct(
         protected CaixaResultsDownloaderService $downloader,
-        protected QuinaSpreadsheetImporter $quinaImporter,
+        protected CaixaSpreadsheetImporter $spreadsheetImporter,
+        protected LotteryRulesService $rulesService,
     ) {
     }
 
     public function sync(LotteryModality $modality): array
     {
-        if ($modality->code !== 'quina') {
-            throw new InvalidArgumentException('A sincronização automática pela CAIXA está disponível apenas para a Quina nesta etapa.');
+        if (! $this->rulesService->supportsCaixaSync($modality)) {
+            throw new InvalidArgumentException("A sincronização automática pela CAIXA ainda não está disponível para {$modality->name}.");
         }
 
         $filePath = $this->downloader->downloadSpreadsheet($modality->name);
 
         try {
-            $result = $this->quinaImporter->import($filePath, $modality);
+            $result = $this->spreadsheetImporter->import($filePath, $modality);
         } finally {
             if (is_string($filePath) && file_exists($filePath)) {
                 @unlink($filePath);
@@ -42,12 +43,22 @@ class CaixaResultsSyncService
 
     public function syncQuina(): array
     {
+        return $this->syncByCode('quina');
+    }
+
+    public function syncLotofacil(): array
+    {
+        return $this->syncByCode('lotofacil');
+    }
+
+    protected function syncByCode(string $code): array
+    {
         $modality = LotteryModality::query()
-            ->where('code', 'quina')
+            ->where('code', $code)
             ->first();
 
         if (! $modality) {
-            throw new RuntimeException('Modalidade Quina não encontrada. Rode os seeders primeiro.');
+            throw new RuntimeException("Modalidade {$code} não encontrada. Rode os seeders primeiro.");
         }
 
         return $this->sync($modality);

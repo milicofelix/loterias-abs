@@ -7,24 +7,41 @@ use InvalidArgumentException;
 
 class SmartGameGeneratorGatewayService
 {
+    protected LotteryEngineClient $client;
+    protected StatisticsService $statisticsService;
+    protected DelayAnalysisService $delayAnalysisService;
+    protected HistoricalProfileComparisonService $historicalProfileComparisonService;
+    protected LotteryRulesService $rulesService;
+
     public function __construct(
-        protected LotteryEngineClient $client,
-        protected StatisticsService $statisticsService,
-        protected DelayAnalysisService $delayAnalysisService,
-        protected HistoricalProfileComparisonService $historicalProfileComparisonService,
+        LotteryEngineClient $client,
+        StatisticsService $statisticsService,
+        DelayAnalysisService $delayAnalysisService,
+        HistoricalProfileComparisonService $historicalProfileComparisonService,
+        LotteryRulesService $rulesService
     ) {
+        $this->client = $client;
+        $this->statisticsService = $statisticsService;
+        $this->delayAnalysisService = $delayAnalysisService;
+        $this->historicalProfileComparisonService = $historicalProfileComparisonService;
+        $this->rulesService = $rulesService;
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * @return array{games: array<int, array<string, mixed>>, meta: array<string, mixed>|null}
      */
-    public function generate(LotteryModality $modality, array $options = []): array
+    public function generateWithMeta(LotteryModality $modality, array $options = []): array
     {
         $strategy = (string) ($options['strategy'] ?? 'balanced');
         $games = (int) ($options['games'] ?? 5);
-        $candidatePool = (int) ($options['candidate_pool'] ?? 2000);
+        $candidatePool = (int) ($options['candidate_pool'] ?? match ($modality->code) {
+            'lotofacil' => 4000,
+            'quina' => 2000,
+            default => 2000,
+        });
+        $minScore = (int) ($options['min_score'] ?? 0);
 
-        $this->validateOptions($modality, $strategy, $games, $candidatePool);
+        $this->validateOptions($modality, $strategy, $games, $candidatePool, $minScore);
 
         $frequencies = $this->statisticsService->numberFrequencies($modality);
         $delays = $this->delayAnalysisService->numberDelays($modality);
@@ -52,6 +69,7 @@ class SmartGameGeneratorGatewayService
             'strategy' => $strategy,
             'games' => $games,
             'candidate_pool' => $candidatePool,
+            'min_score' => $minScore,
             'stats' => [
                 'frequencies' => $frequencies,
                 'delays' => $delays,
@@ -64,19 +82,31 @@ class SmartGameGeneratorGatewayService
 
         $response = $this->client->generateSmart($payload);
 
-        $gamesPayload = $response['games'] ?? [];
+        return [
+            'games' => is_array($response['games'] ?? null) ? $response['games'] : [],
+            'meta' => is_array($response['meta'] ?? null) ? $response['meta'] : null,
+        ];
+    }
 
-        return is_array($gamesPayload) ? $gamesPayload : [];
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function generate(LotteryModality $modality, array $options = []): array
+    {
+        $result = $this->generateWithMeta($modality, $options);
+
+        return $result['games'];
     }
 
     protected function validateOptions(
         LotteryModality $modality,
         string $strategy,
         int $games,
-        int $candidatePool
+        int $candidatePool,
+        int $minScore
     ): void {
-        if ($modality->code !== 'quina') {
-            throw new InvalidArgumentException('A geração inteligente está disponível apenas para a Quina nesta etapa.');
+        if (! $this->rulesService->usesExternalSmartEngine($modality)) {
+            throw new InvalidArgumentException("A engine externa não está habilitada para {$modality->name}.");
         }
 
         if (! in_array($strategy, ['balanced', 'hot'], true)) {
@@ -89,6 +119,10 @@ class SmartGameGeneratorGatewayService
 
         if ($candidatePool < 40 || $candidatePool > 20000) {
             throw new InvalidArgumentException('O volume de candidatos deve estar entre 40 e 20000.');
+        }
+
+        if ($minScore < 0 || $minScore > 100) {
+            throw new InvalidArgumentException('O score mínimo deve estar entre 0 e 100.');
         }
     }
 }

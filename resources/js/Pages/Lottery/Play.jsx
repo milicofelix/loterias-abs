@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { Link } from '@inertiajs/react';
 import NumberPicker from '@/Components/Lottery/NumberPicker';
 import {
     ActionLink,
@@ -12,24 +11,34 @@ import {
     Tag,
     lotteryPalette,
 } from './components/LotteryUi';
+import {
+    getHistoryPrizeEmptyText,
+    getPlayInstruction,
+    getPrizeHits,
+    supportsSmartGeneration,
+} from './components/modalityRules';
+import AppPreloader from '@/Components/AppPreloader';
 
 function InfoRow({ label, value }) {
     return (
-        <div className="flex items-center justify-between gap-3 rounded-2xl border px-4 py-3" style={{ borderColor: lotteryPalette.line }}>
+        <div
+            className="flex items-center justify-between gap-3 rounded-2xl border px-4 py-3"
+            style={{ borderColor: lotteryPalette.line }}
+        >
             <span style={{ color: lotteryPalette.muted }}>{label}</span>
             <strong style={{ color: lotteryPalette.blueDark }}>{value}</strong>
         </div>
     );
 }
 
-
-function HistoricalPrizeSummary({ summary, drawCount }) {
+function HistoricalPrizeSummary({ summary, modality }) {
     if (!summary) {
         return null;
     }
 
+    const prizeHits = getPrizeHits(modality);
     const visibleHits = Object.entries(summary.hit_counts || {})
-        .filter(([hit]) => Number(hit) >= 2 && Number(hit) <= Number(drawCount || 0));
+        .filter(([hit]) => prizeHits.includes(Number(hit)));
 
     return (
         <div className="space-y-4">
@@ -40,7 +49,7 @@ function HistoricalPrizeSummary({ summary, drawCount }) {
                 <InfoRow label="Concursos lidos" value={summary.contest_count_checked ?? 0} />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 {visibleHits.map(([hit, total]) => (
                     <InfoRow key={hit} label={`${hit} acertos`} value={total} />
                 ))}
@@ -60,7 +69,7 @@ function HistoricalPrizeSummary({ summary, drawCount }) {
                     className="rounded-[22px] border px-4 py-4 text-sm leading-7 md:text-base"
                     style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff' }}
                 >
-                    Essa combinação ainda não apareceu com 2 ou mais acertos no histórico disponível.
+                    {getHistoryPrizeEmptyText(modality)}
                 </div>
             )}
         </div>
@@ -68,24 +77,37 @@ function HistoricalPrizeSummary({ summary, drawCount }) {
 }
 
 export default function Play({ modality, prefilledNumbers = [] }) {
-    const [count, setCount] = useState(prefilledNumbers.length > 0 ? prefilledNumbers.length : modality.bet_min_count);
+    const [count, setCount] = useState(
+        prefilledNumbers.length > 0 ? prefilledNumbers.length : modality.bet_min_count
+    );
     const [numbers, setNumbers] = useState(prefilledNumbers);
-    const [manualNumbers, setManualNumbers] = useState(prefilledNumbers.length > 0 ? prefilledNumbers.join(', ') : '');
+    const [manualNumbers, setManualNumbers] = useState(
+        prefilledNumbers.length > 0 ? prefilledNumbers.join(', ') : ''
+    );
     const [analysis, setAnalysis] = useState(null);
     const [loadingGenerate, setLoadingGenerate] = useState(false);
     const [loadingAnalyze, setLoadingAnalyze] = useState(false);
     const [error, setError] = useState('');
     const [smartStrategy, setSmartStrategy] = useState('balanced');
     const [smartGamesCount, setSmartGamesCount] = useState(5);
-    const [loadingSmartGenerate, setLoadingSmartGenerate] = useState(false);
+    const [smartMinScore, setSmartMinScore] = useState(0);
     const [smartGames, setSmartGames] = useState([]);
-    const [selectedNumbers, setSelectedNumbers] = useState([]);
+    const [smartMeta, setSmartMeta] = useState(null);
+    const [selectedNumbers, setSelectedNumbers] = useState(prefilledNumbers);
+    const [smartLoading, setSmartLoading] = useState(false);
+    const [smartFinishSignal, setSmartFinishSignal] = useState(0);
+    const [smartLoadingText, setSmartLoadingText] = useState({
+        title: 'Gerando jogos inteligentes...',
+        description: 'Analisando estatísticas, atrasos e padrões históricos.',
+    });
 
     const maxNumbers = Math.min(
         modality?.bet_max_count || 5,
         Math.max(modality?.bet_min_count || 1, Number(count) || modality?.bet_min_count || 5)
     );
-    const totalNumbers = modality?.total_numbers || 80;
+
+    const totalNumbers = ((modality?.max_number || 80) - (modality?.min_number || 1)) + 1;
+    const canUseSmartGeneration = supportsSmartGeneration(modality);
 
     const parsedManualNumbers = useMemo(() => {
         return manualNumbers
@@ -103,13 +125,13 @@ export default function Play({ modality, prefilledNumbers = [] }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-        useEffect(() => {
+    useEffect(() => {
         if (selectedNumbers.length > maxNumbers) {
             const trimmed = selectedNumbers.slice(0, maxNumbers);
             setSelectedNumbers(trimmed);
             setManualNumbers(trimmed.join(', '));
         }
-    }, [maxNumbers, selectedNumbers, setManualNumbers]);
+    }, [maxNumbers, selectedNumbers]);
 
     async function handleGenerate() {
         setLoadingGenerate(true);
@@ -152,363 +174,637 @@ export default function Play({ modality, prefilledNumbers = [] }) {
         await analyzeNumbers(parsedManualNumbers, 'manual');
     }
 
-    return (
-        <LotteryPage>
-            <div className="space-y-8">
-                <HeroBanner
-                    eyebrow="Área do jogador"
-                    title="Gerar e analisar"
-                    contest={modality.name}
-                    subtitle="Monte combinações bonitas, rode leituras automáticas e compare palpites inteligentes em uma tela mais rica e premium."
-                    art="single"
-                >
-                    <ActionLink href={`/lottery/modalities/${modality.id}/combination-history`}>Ver histórico</ActionLink>
-                    <ActionLink href={`/lottery/modalities/${modality.id}`} variant="secondary">Voltar ao painel</ActionLink>
-                </HeroBanner>
+    const handleGenerateSmart = async () => {
+        let stepTimer1 = null;
+        let stepTimer2 = null;
 
-                {error ? (
-                    <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 font-semibold text-rose-700">
-                        {error}
-                    </div>
-                ) : null}
+        try {
+            setError('');
+            setSmartGames([]);
+            setSmartMeta(null);
+            setSmartLoading(true);
 
-                <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-                    <SurfaceCard>
-                        <SectionHeading
-                            eyebrow="Geração"
-                            title="Criar nova combinação"
-                            description={`Escolha entre geração simples e sugestões inteligentes. Números válidos de ${modality.min_number} a ${modality.max_number}.`}
-                        />
+            setSmartLoadingText({
+                title: 'Gerando jogos inteligentes...',
+                description: 'Preparando os dados iniciais para análise.',
+            });
 
-                        <div className="grid gap-5 lg:grid-cols-2">
-                            <div className="rounded-[24px] border p-5" style={{ borderColor: lotteryPalette.line, background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)' }}>
-                                <div className="text-lg font-bold" style={{ color: lotteryPalette.blueDark }}>Gerador rápido</div>
-                                <label className="mt-4 block text-sm font-semibold" style={{ color: lotteryPalette.muted }}>
-                                    Quantidade de números
-                                </label>
-                                <input
-                                    type="number"
-                                    min={modality.bet_min_count}
-                                    max={modality.bet_max_count}
-                                    value={count}
-                                    onChange={(e) => setCount(Number(e.target.value))}
-                                    className="mt-2 w-full rounded-2xl border bg-white px-4 py-3"
-                                    style={{ borderColor: lotteryPalette.line }}
-                                />
-                                <button
-                                    onClick={handleGenerate}
-                                    disabled={loadingGenerate}
-                                    className="mt-4 inline-flex w-full items-center justify-center rounded-2xl px-5 py-3 font-semibold text-white shadow-[0_16px_30px_rgba(12,90,150,0.18)]"
-                                    style={{ background: 'linear-gradient(180deg, #1670b6 0%, #0c5a96 100%)', opacity: loadingGenerate ? 0.75 : 1 }}
-                                >
-                                    {loadingGenerate ? 'Gerando...' : 'Gerar jogo'}
-                                </button>
-                            </div>
+            stepTimer1 = setTimeout(() => {
+                setSmartLoadingText({
+                    title: 'Cruzando estatísticas...',
+                    description: 'Comparando frequências, atrasos e padrões históricos.',
+                });
+            }, 1000);
 
-                            <div className="rounded-[24px] border p-5" style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff' }}>
-                                <div className="text-lg font-bold" style={{ color: lotteryPalette.blueDark }}>Gerador inteligente</div>
-                                <div className="mt-4 flex flex-wrap gap-2">
-                                    {[
-                                        { value: 'balanced', label: 'Equilibrado' },
-                                        { value: 'hot', label: 'Quente' },
-                                    ].map((item) => (
-                                        <Tag key={item.value} active={smartStrategy === item.value} onClick={() => setSmartStrategy(item.value)}>
-                                            {item.label}
-                                        </Tag>
-                                    ))}
-                                </div>
-                                <label className="mt-4 block text-sm font-semibold" style={{ color: lotteryPalette.muted }}>
-                                    Quantidade de jogos
-                                </label>
-                                <input
-                                    type="number"
-                                    min={1}
-                                    max={10}
-                                    value={smartGamesCount}
-                                    onChange={(e) => setSmartGamesCount(Number(e.target.value))}
-                                    className="mt-2 w-full rounded-2xl border bg-white px-4 py-3"
-                                    style={{ borderColor: lotteryPalette.line }}
-                                />
-                                <button
-                                    onClick={async () => {
-                                        setLoadingSmartGenerate(true);
-                                        setError('');
+            stepTimer2 = setTimeout(() => {
+                setSmartLoadingText({
+                    title: 'Finalizando combinações...',
+                    description: 'Organizando os melhores jogos encontrados.',
+                });
+            }, 2600);
 
-                                        try {
-                                            const response = await axios.post(`/lottery/modalities/${modality.id}/generate-smart`, {
-                                                strategy: smartStrategy,
-                                                games: smartGamesCount,
-                                            });
+            const response = await axios.post(
+                `/lottery/modalities/${modality.id}/generate-smart`,
+                {
+                    strategy: smartStrategy,
+                    games: smartGamesCount,
+                    min_score: Number(smartMinScore) || 0,
+                }
+            );
 
-                                            setSmartGames(response.data.games || []);
-                                        } catch (err) {
-                                            setSmartGames([]);
-                                            setError(err?.response?.data?.message || 'Erro ao gerar jogos inteligentes.');
-                                        } finally {
-                                            setLoadingSmartGenerate(false);
-                                        }
-                                    }}
-                                    disabled={loadingSmartGenerate}
-                                    className="mt-4 inline-flex w-full items-center justify-center rounded-2xl border px-5 py-3 font-semibold"
-                                    style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff', color: lotteryPalette.blue }}
-                                >
-                                    {loadingSmartGenerate ? 'Gerando inteligentes...' : 'Gerar jogos inteligentes'}
-                                </button>
-                            </div>
-                        </div>
-                    </SurfaceCard>
+            setSmartGames(response.data.games || []);
+            setSmartMeta(response.data.meta || null);
+        } catch (err) {
+            setSmartGames([]);
+            setSmartMeta(null);
+            setError(err?.response?.data?.message || 'Erro ao gerar jogos inteligentes.');
+        } finally {
+            if (stepTimer1) clearTimeout(stepTimer1);
+            if (stepTimer2) clearTimeout(stepTimer2);
 
-                    <SurfaceCard>
-    <SectionHeading
-        eyebrow="Entrada manual"
-        title="Monte sua combinação"
-        description={`Escolha ${maxNumbers} números clicando no painel abaixo.`}
-    />
+            setSmartLoading(false);
+            setSmartFinishSignal(Date.now());
+        }
+    };
 
-    <div
-        className="rounded-[28px] border p-5 md:p-6"
-        style={{
-            borderColor: lotteryPalette.line,
-            background: 'linear-gradient(180deg, #ffffff 0%, #f5f7fb 100%)',
-        }}
-    >
-        <NumberPicker
-            totalNumbers={totalNumbers}
-            maxSelection={maxNumbers}
-            selected={selectedNumbers}
-            onChange={(nums) => {
-                setSelectedNumbers(nums);
-                setManualNumbers(nums.join(', '));
-            }}
-        />
-    </div>
+    const minScoreOptions = [
+        { value: 0, label: 'Livre' },
+        { value: 80, label: '80+' },
+        { value: 85, label: '85+' },
+        { value: 90, label: '90+' },
+    ];
 
-    <div className="mt-4 flex flex-wrap gap-3">
-        <button
-            type="button"
-            onClick={() => {
-                setSelectedNumbers([]);
-                setManualNumbers('');
-            }}
-            className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border px-4 font-semibold transition"
-            style={{
-                borderColor: lotteryPalette.line,
-                backgroundColor: '#fff',
-                color: lotteryPalette.blue,
-            }}
-        >
-            Limpar seleção
-        </button>
+    const requestedMinScore = Number(smartMeta?.requested_min_score || 0);
+    const aboveMinScoreCount = Number(smartMeta?.above_min_score_count || 0);
+    const returnedGames = Number(smartMeta?.returned_games || 0);
+    const usedMinScoreFallback = Boolean(smartMeta?.used_min_score_fallback);
 
-        <button
-            onClick={handleAnalyzeManual}
-            disabled={loadingAnalyze || selectedNumbers.length !== maxNumbers}
-            className="inline-flex min-h-[46px] flex-1 items-center justify-center rounded-2xl px-5 py-3 font-semibold text-white"
-            style={{
-                background: selectedNumbers.length === maxNumbers
-                    ? 'linear-gradient(180deg, #1670b6 0%, #0c5a96 100%)'
-                    : '#9db8d1',
-                opacity: loadingAnalyze ? 0.8 : 1,
-            }}
-        >
-            {loadingAnalyze ? 'Analisando...' : 'Analisar combinação'}
-        </button>
-    </div>
+    const renderMinScoreMessage = () => {
+        if (!smartMeta || requestedMinScore <= 0) {
+            return null;
+        }
 
-    {selectedNumbers.length > 0 ? (
-        <div className="mt-4 flex flex-wrap gap-2 text-sm" style={{ color: lotteryPalette.muted }}>
-            {selectedNumbers.map((value) => (
-                <span
-                    key={value}
-                    className="rounded-full border px-3 py-1 font-semibold"
+        if (!usedMinScoreFallback) {
+            return (
+                <div
+                    className="mt-4 rounded-[22px] border px-4 py-4 text-sm leading-7 md:text-base"
                     style={{
-                        borderColor: lotteryPalette.line,
-                        backgroundColor: '#fff',
+                        borderColor: '#cfe7ff',
+                        backgroundColor: '#f4faff',
+                        color: lotteryPalette.blueDark,
                     }}
                 >
-                    {String(value).padStart(2, '0')}
-                </span>
-            ))}
-        </div>
-    ) : null}
-</SurfaceCard>
+                    Os jogos retornados respeitaram o score mínimo solicitado de <strong>{requestedMinScore}</strong>.
                 </div>
+            );
+        }
 
-                {smartGames.length > 0 ? (
-                    <SurfaceCard>
-                        <SectionHeading
-                            eyebrow="Sugestões"
-                            title="Jogos inteligentes sugeridos"
-                            description={`Estratégia ativa: ${smartStrategy === 'hot' ? 'Quente' : 'Equilibrado'}. Use, compare e analise qualquer sugestão com um clique.`}
-                        />
+        if (aboveMinScoreCount > 0) {
+            const complemented = Math.max(returnedGames - aboveMinScoreCount, 0);
 
-                        <div className="grid gap-4 xl:grid-cols-2">
-                            {smartGames.map((game, index) => (
-                                <div key={`${game.numbers.join('-')}-${index}`} className="rounded-[26px] border p-5" style={{ borderColor: lotteryPalette.line, background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)' }}>
-                                    <div className="flex flex-wrap gap-2">
-                                        {game.numbers.map((number) => (
-                                            <NumberBall key={number} number={number} size="sm" />
-                                        ))}
+            return (
+                <div
+                    className="mt-4 rounded-[22px] border px-4 py-4 text-sm leading-7 md:text-base"
+                    style={{
+                        borderColor: '#f5d78e',
+                        backgroundColor: '#fff9e8',
+                        color: '#8a6500',
+                    }}
+                >
+                    Foram encontrados <strong>{aboveMinScoreCount}</strong> jogo(s) com score mínimo{' '}
+                    <strong>{requestedMinScore}</strong>. Os demais <strong>{complemented}</strong> foram completados
+                    com os melhores disponíveis abaixo desse limite.
+                </div>
+            );
+        }
+
+        return (
+            <div
+                className="mt-4 rounded-[22px] border px-4 py-4 text-sm leading-7 md:text-base"
+                style={{
+                    borderColor: '#f5d78e',
+                    backgroundColor: '#fff9e8',
+                    color: '#8a6500',
+                }}
+            >
+                O sistema tentou encontrar jogos com score mínimo <strong>{requestedMinScore}</strong>, mas não encontrou
+                candidatos suficientes acima desse limite. Por isso, retornou os melhores jogos disponíveis.
+            </div>
+        );
+    };
+
+    return (
+        <>
+            <AppPreloader
+                visible={smartLoading}
+                finishSignal={smartFinishSignal}
+                title={smartLoadingText.title}
+                description={smartLoadingText.description}
+            />
+
+            <LotteryPage>
+                <div className="space-y-8">
+                    <HeroBanner
+                        eyebrow="Área do jogador"
+                        title="Gerar e analisar"
+                        contest={modality.name}
+                        subtitle={getPlayInstruction(modality)}
+                        art="single"
+                    >
+                        <ActionLink href={`/lottery/modalities/${modality.id}/combination-history`}>
+                            Ver histórico
+                        </ActionLink>
+                        <ActionLink href={`/lottery/modalities/${modality.id}`} variant="secondary">
+                            Voltar ao painel
+                        </ActionLink>
+                    </HeroBanner>
+
+                    {error ? (
+                        <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 font-semibold text-rose-700">
+                            {error}
+                        </div>
+                    ) : null}
+
+                    <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+                        <SurfaceCard>
+                            <SectionHeading
+                                eyebrow="Geração"
+                                title="Criar nova combinação"
+                                description={`Escolha entre geração simples e sugestões inteligentes. Números válidos de ${modality.min_number} a ${modality.max_number}.`}
+                            />
+
+                            <div className="grid gap-5 lg:grid-cols-2">
+                                <div
+                                    className="rounded-[24px] border p-5"
+                                    style={{
+                                        borderColor: lotteryPalette.line,
+                                        background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
+                                    }}
+                                >
+                                    <div className="text-lg font-bold" style={{ color: lotteryPalette.blueDark }}>
+                                        Gerador rápido
                                     </div>
 
-                                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                                        <InfoRow label="Score" value={game.weighted_score} />
-                                        <InfoRow label="Perfil" value={game.profile} />
-                                        <InfoRow label="Classificação" value={game.classification} />
-                                        <InfoRow label="Frequentes" value={game.top_frequency_hits} />
+                                    <label
+                                        className="mt-4 block text-sm font-semibold"
+                                        style={{ color: lotteryPalette.muted }}
+                                    >
+                                        Quantidade de números
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        min={modality.bet_min_count}
+                                        max={modality.bet_max_count}
+                                        value={count}
+                                        onChange={(e) => setCount(Number(e.target.value))}
+                                        className="mt-2 w-full rounded-2xl border bg-white px-4 py-3"
+                                        style={{ borderColor: lotteryPalette.line }}
+                                    />
+
+                                    <button
+                                        onClick={handleGenerate}
+                                        disabled={loadingGenerate}
+                                        className="mt-4 inline-flex w-full items-center justify-center rounded-2xl px-5 py-3 font-semibold text-white shadow-[0_16px_30px_rgba(12,90,150,0.18)]"
+                                        style={{
+                                            background: 'linear-gradient(180deg, #1670b6 0%, #0c5a96 100%)',
+                                            opacity: loadingGenerate ? 0.75 : 1,
+                                        }}
+                                    >
+                                        {loadingGenerate ? 'Gerando...' : 'Gerar jogo'}
+                                    </button>
+                                </div>
+
+                                <div
+                                    className="rounded-[24px] border p-5"
+                                    style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff' }}
+                                >
+                                    <div className="text-lg font-bold" style={{ color: lotteryPalette.blueDark }}>
+                                        Gerador inteligente
                                     </div>
 
-                                    <p className="mt-4 text-sm leading-7" style={{ color: lotteryPalette.muted }}>
-                                        {game.reason}
-                                    </p>
+                                    {canUseSmartGeneration ? (
+                                        <>
+                                            <div className="mt-4 flex flex-wrap gap-2">
+                                                {[
+                                                    { value: 'balanced', label: 'Equilibrado' },
+                                                    { value: 'hot', label: 'Quente' },
+                                                ].map((item) => (
+                                                    <Tag
+                                                        key={item.value}
+                                                        active={smartStrategy === item.value}
+                                                        onClick={() => setSmartStrategy(item.value)}
+                                                    >
+                                                        {item.label}
+                                                    </Tag>
+                                                ))}
+                                            </div>
 
-                                    <div className="mt-4 rounded-[22px] border p-4" style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff' }}>
-                                        <div className="text-sm font-bold uppercase tracking-[0.18em]" style={{ color: lotteryPalette.muted }}>
-                                            Histórico premiável
-                                        </div>
-                                        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                                            <InfoRow label="Melhor" value={`${game.historical_prize_summary?.best_hit ?? 0} acertos`} />
-                                            <InfoRow label="Ocorrências" value={game.historical_prize_summary?.total_prized_occurrences ?? 0} />
-                                            <InfoRow label="2 acertos" value={game.historical_prize_summary?.hit_counts?.['2'] ?? 0} />
-                                            <InfoRow label="3+ acertos" value={Object.entries(game.historical_prize_summary?.hit_counts || {}).filter(([hit]) => Number(hit) >= 3).reduce((sum, [, total]) => sum + Number(total || 0), 0)} />
-                                        </div>
-                                    </div>
+                                            <label
+                                                className="mt-4 block text-sm font-semibold"
+                                                style={{ color: lotteryPalette.muted }}
+                                            >
+                                                Quantidade de jogos
+                                            </label>
 
-                                    <div className="mt-4 flex flex-wrap gap-2">
-                                        <button
-                                            className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border px-4 font-semibold"
-                                            style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff', color: lotteryPalette.blue }}
-                                            onClick={() => {
-                                                setNumbers(game.numbers);
-                                                setManualNumbers(game.numbers.join(', '));
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                max={10}
+                                                value={smartGamesCount}
+                                                onChange={(e) => setSmartGamesCount(Number(e.target.value))}
+                                                className="mt-2 w-full rounded-2xl border bg-white px-4 py-3"
+                                                style={{ borderColor: lotteryPalette.line }}
+                                            />
+
+                                            <label
+                                                className="mt-4 block text-sm font-semibold"
+                                                style={{ color: lotteryPalette.muted }}
+                                            >
+                                                Score mínimo desejado
+                                            </label>
+
+                                            <div className="mt-2 flex flex-wrap gap-2">
+                                                {minScoreOptions.map((item) => (
+                                                    <Tag
+                                                        key={item.value}
+                                                        active={Number(smartMinScore) === item.value}
+                                                        onClick={() => setSmartMinScore(item.value)}
+                                                    >
+                                                        {item.label}
+                                                    </Tag>
+                                                ))}
+                                            </div>
+
+                                            <div
+                                                className="mt-4 rounded-[18px] border px-4 py-3 text-sm leading-6"
+                                                style={{
+                                                    borderColor: lotteryPalette.line,
+                                                    backgroundColor: '#f8fbff',
+                                                    color: lotteryPalette.muted,
+                                                }}
+                                            >
+                                                {Number(smartMinScore) > 0
+                                                    ? `O sistema tentará encontrar jogos com score mínimo ${smartMinScore}. Caso não encontre quantidade suficiente, completará o restante com os melhores disponíveis.`
+                                                    : 'Sem score mínimo: o sistema retorna os melhores jogos disponíveis dentro da análise atual.'}
+                                            </div>
+
+                                            <button
+                                                onClick={handleGenerateSmart}
+                                                disabled={smartLoading}
+                                                className="mt-4 inline-flex w-full items-center justify-center rounded-2xl border px-5 py-3 font-semibold"
+                                                style={{
+                                                    borderColor: lotteryPalette.line,
+                                                    backgroundColor: '#fff',
+                                                    color: lotteryPalette.blue,
+                                                    opacity: smartLoading ? 0.75 : 1,
+                                                }}
+                                            >
+                                                {smartLoading ? 'Gerando inteligentes...' : 'Gerar jogos inteligentes'}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <div
+                                            className="mt-4 rounded-[20px] border px-4 py-4 text-sm leading-7"
+                                            style={{
+                                                borderColor: lotteryPalette.line,
+                                                backgroundColor: '#fafcff',
+                                                color: lotteryPalette.muted,
                                             }}
                                         >
-                                            Usar esta combinação
-                                        </button>
-
-                                        <button
-                                            className="inline-flex min-h-[46px] items-center justify-center rounded-2xl px-4 font-semibold text-white"
-                                            style={{ background: 'linear-gradient(180deg, #1670b6 0%, #0c5a96 100%)' }}
-                                            onClick={() => analyzeNumbers(game.numbers, 'generated')}
-                                        >
-                                            Analisar agora
-                                        </button>
-                                    </div>
+                                            A geração inteligente ainda não está disponível para esta modalidade.
+                                        </div>
+                                    )}
                                 </div>
-                            ))}
-                        </div>
-                    </SurfaceCard>
-                ) : null}
+                            </div>
+                        </SurfaceCard>
 
-                <SurfaceCard>
-                    <SectionHeading
-                        eyebrow="Combinação atual"
-                        title="Seu jogo em destaque"
-                        description="Acompanhe a combinação selecionada antes de prosseguir para nova análise ou futuras apostas."
-                    />
+                        <SurfaceCard>
+                            <SectionHeading
+                                eyebrow="Entrada manual"
+                                title="Monte sua combinação"
+                                description={getPlayInstruction(modality)}
+                            />
 
-                    <div className="flex flex-wrap gap-3">
-                        {numbers.length > 0 ? (
-                            numbers.map((number) => <NumberBall key={number} number={number} size="lg" />)
-                        ) : (
-                            <span className="text-base" style={{ color: lotteryPalette.muted }}>
-                                Nenhuma combinação selecionada ainda.
-                            </span>
-                        )}
+                            <div
+                                className="rounded-[28px] border p-5 md:p-6"
+                                style={{
+                                    borderColor: lotteryPalette.line,
+                                    background: 'linear-gradient(180deg, #ffffff 0%, #f5f7fb 100%)',
+                                }}
+                            >
+                                <NumberPicker
+                                    totalNumbers={totalNumbers}
+                                    startNumber={modality.min_number}
+                                    maxSelection={maxNumbers}
+                                    selected={selectedNumbers}
+                                    columns={modality.code === 'lotofacil' ? 5 : 10}
+                                    onChange={(nums) => {
+                                        setSelectedNumbers(nums);
+                                        setManualNumbers(nums.join(', '));
+                                    }}
+                                />
+                            </div>
+
+                            <div className="mt-4 flex flex-wrap gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedNumbers([]);
+                                        setManualNumbers('');
+                                    }}
+                                    className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border px-4 font-semibold transition"
+                                    style={{
+                                        borderColor: lotteryPalette.line,
+                                        backgroundColor: '#fff',
+                                        color: lotteryPalette.blue,
+                                    }}
+                                >
+                                    Limpar seleção
+                                </button>
+
+                                <button
+                                    onClick={handleAnalyzeManual}
+                                    disabled={loadingAnalyze || selectedNumbers.length !== maxNumbers}
+                                    className="inline-flex min-h-[46px] flex-1 items-center justify-center rounded-2xl px-5 py-3 font-semibold text-white"
+                                    style={{
+                                        background:
+                                            selectedNumbers.length === maxNumbers
+                                                ? 'linear-gradient(180deg, #1670b6 0%, #0c5a96 100%)'
+                                                : '#9db8d1',
+                                        opacity: loadingAnalyze ? 0.8 : 1,
+                                    }}
+                                >
+                                    {loadingAnalyze ? 'Analisando...' : 'Analisar combinação'}
+                                </button>
+                            </div>
+
+                            {selectedNumbers.length > 0 ? (
+                                <div className="mt-4 flex flex-wrap gap-2 text-sm" style={{ color: lotteryPalette.muted }}>
+                                    {selectedNumbers.map((value) => (
+                                        <span
+                                            key={value}
+                                            className="rounded-full border px-3 py-1 font-semibold"
+                                            style={{
+                                                borderColor: lotteryPalette.line,
+                                                backgroundColor: '#fff',
+                                            }}
+                                        >
+                                            {String(value).padStart(2, '0')}
+                                        </span>
+                                    ))}
+                                </div>
+                            ) : null}
+                        </SurfaceCard>
                     </div>
-                </SurfaceCard>
 
-                {analysis ? (
-                    <div className="grid gap-6 xl:grid-cols-2">
+                    {smartMeta ? (
                         <SurfaceCard>
-                            <SectionHeading eyebrow="Leitura base" title="Resumo da combinação" />
-                            <div className="grid gap-3 sm:grid-cols-2">
-                                <InfoRow label="Soma" value={analysis.sum} />
-                                <InfoRow label="Amplitude" value={analysis.range} />
-                                <InfoRow label="Pares" value={analysis.even_count} />
-                                <InfoRow label="Ímpares" value={analysis.odd_count} />
-                                <InfoRow label="Menor número" value={analysis.min} />
-                                <InfoRow label="Maior número" value={analysis.max} />
+                            <SectionHeading
+                                eyebrow="Motor inteligente"
+                                title="Resumo da geração"
+                                description="Indicadores de processamento retornados pelo motor estatístico."
+                            />
+
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                                <InfoRow label="Candidatos gerados" value={smartMeta.generated_candidates ?? 0} />
+                                <InfoRow label="Candidatos válidos" value={smartMeta.valid_candidates ?? 0} />
+                                <InfoRow label="Tempo" value={`${smartMeta.elapsed_ms ?? 0} ms`} />
+                                <InfoRow label="Score solicitado" value={requestedMinScore || 'Livre'} />
+                                <InfoRow label="Jogos acima do mínimo" value={aboveMinScoreCount} />
                             </div>
-                        </SurfaceCard>
 
-                        <SurfaceCard>
-                            <SectionHeading eyebrow="Indicadores" title="Comparação histórica" />
-                            <div className="grid gap-3 sm:grid-cols-2">
-                                <InfoRow label="Média de frequência" value={analysis.average_frequency} />
-                                <InfoRow label="Média de atraso" value={analysis.average_delay} />
-                                <InfoRow label="Mais frequentes" value={analysis.top_frequency_hits} />
-                                <InfoRow label="Mais atrasados" value={analysis.top_delay_hits} />
-                                <InfoRow label="Média histórica da soma" value={analysis.historical_averages?.sum} />
-                                <InfoRow label="Diferença da soma" value={analysis.historical_comparison?.sum_diff} />
-                            </div>
+                            {renderMinScoreMessage()}
                         </SurfaceCard>
+                    ) : null}
 
+                    {smartGames.length > 0 ? (
                         <SurfaceCard>
-                            <SectionHeading eyebrow="Faixas" title="Distribuição numérica" />
-                            <div className="space-y-3">
-                                {Object.entries(analysis.range_distribution || {}).map(([label, total]) => (
-                                    <InfoRow key={label} label={label} value={total} />
+                            <SectionHeading
+                                eyebrow="Sugestões"
+                                title="Jogos inteligentes sugeridos"
+                                description={`Estratégia ativa: ${smartStrategy === 'hot' ? 'Quente' : 'Equilibrado'}. Use, compare e analise qualquer sugestão com um clique.`}
+                            />
+
+                            <div className="grid gap-4 xl:grid-cols-2">
+                                {smartGames.map((game, index) => (
+                                    <div
+                                        key={`${game.numbers.join('-')}-${index}`}
+                                        className="rounded-[26px] border p-5"
+                                        style={{
+                                            borderColor: lotteryPalette.line,
+                                            background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
+                                        }}
+                                    >
+                                        <div className="flex flex-wrap gap-2">
+                                            {game.numbers.map((number) => (
+                                                <NumberBall key={number} number={number} size="sm" />
+                                            ))}
+                                        </div>
+
+                                        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                                            <InfoRow label="Score" value={game.weighted_score} />
+                                            <InfoRow label="Perfil" value={game.profile} />
+                                            <InfoRow label="Classificação" value={game.classification} />
+                                            <InfoRow label="Frequentes" value={game.top_frequency_hits} />
+                                        </div>
+
+                                        <p className="mt-4 text-sm leading-7" style={{ color: lotteryPalette.muted }}>
+                                            {game.reason}
+                                        </p>
+
+                                        <div
+                                            className="mt-4 rounded-[22px] border p-4"
+                                            style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff' }}
+                                        >
+                                            <div
+                                                className="text-sm font-bold uppercase tracking-[0.18em]"
+                                                style={{ color: lotteryPalette.muted }}
+                                            >
+                                                Histórico premiável
+                                            </div>
+
+                                            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                                                <InfoRow
+                                                    label="Melhor"
+                                                    value={`${game.historical_prize_summary?.best_hit ?? 0} acertos`}
+                                                />
+                                                <InfoRow
+                                                    label="Ocorrências"
+                                                    value={game.historical_prize_summary?.total_prized_occurrences ?? 0}
+                                                />
+                                                {getPrizeHits(modality)
+                                                    .slice(0, 2)
+                                                    .map((hit) => (
+                                                        <InfoRow
+                                                            key={hit}
+                                                            label={`${hit} acertos`}
+                                                            value={
+                                                                game.historical_prize_summary?.hit_counts?.[String(hit)] ?? 0
+                                                            }
+                                                        />
+                                                    ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-4 flex flex-wrap gap-2">
+                                            <button
+                                                className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border px-4 font-semibold"
+                                                style={{
+                                                    borderColor: lotteryPalette.line,
+                                                    backgroundColor: '#fff',
+                                                    color: lotteryPalette.blue,
+                                                }}
+                                                onClick={() => {
+                                                    setNumbers(game.numbers);
+                                                    setSelectedNumbers(game.numbers);
+                                                    setManualNumbers(game.numbers.join(', '));
+                                                    setCount(game.numbers.length);
+                                                }}
+                                            >
+                                                Usar esta combinação
+                                            </button>
+
+                                            <button
+                                                className="inline-flex min-h-[46px] items-center justify-center rounded-2xl px-4 font-semibold text-white"
+                                                style={{ background: 'linear-gradient(180deg, #1670b6 0%, #0c5a96 100%)' }}
+                                                onClick={() => analyzeNumbers(game.numbers, 'generated')}
+                                            >
+                                                Analisar agora
+                                            </button>
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
                         </SurfaceCard>
+                    ) : null}
 
-                        <SurfaceCard>
-                            <SectionHeading eyebrow="Sequências" title="Consecutivos encontrados" />
-                            {analysis.consecutive_count > 0 ? (
+                    <SurfaceCard>
+                        <SectionHeading
+                            eyebrow="Combinação atual"
+                            title="Seu jogo em destaque"
+                            description="Acompanhe a combinação selecionada antes de prosseguir para nova análise ou futuras apostas."
+                        />
+
+                        <div className="flex flex-wrap gap-3">
+                            {numbers.length > 0 ? (
+                                numbers.map((number) => <NumberBall key={number} number={number} size="lg" />)
+                            ) : (
+                                <span className="text-base" style={{ color: lotteryPalette.muted }}>
+                                    Nenhuma combinação selecionada ainda.
+                                </span>
+                            )}
+                        </div>
+                    </SurfaceCard>
+
+                    {analysis ? (
+                        <div className="grid gap-6 xl:grid-cols-2">
+                            <SurfaceCard>
+                                <SectionHeading eyebrow="Leitura base" title="Resumo da combinação" />
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <InfoRow label="Soma" value={analysis.sum} />
+                                    <InfoRow label="Amplitude" value={analysis.range} />
+                                    <InfoRow label="Pares" value={analysis.even_count} />
+                                    <InfoRow label="Ímpares" value={analysis.odd_count} />
+                                    <InfoRow label="Menor número" value={analysis.min} />
+                                    <InfoRow label="Maior número" value={analysis.max} />
+                                </div>
+                            </SurfaceCard>
+
+                            <SurfaceCard>
+                                <SectionHeading eyebrow="Indicadores" title="Comparação histórica" />
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <InfoRow label="Média de frequência" value={analysis.average_frequency} />
+                                    <InfoRow label="Média de atraso" value={analysis.average_delay} />
+                                    <InfoRow label="Mais frequentes" value={analysis.top_frequency_hits} />
+                                    <InfoRow label="Mais atrasados" value={analysis.top_delay_hits} />
+                                    <InfoRow label="Média histórica da soma" value={analysis.historical_averages?.sum} />
+                                    <InfoRow label="Diferença da soma" value={analysis.historical_comparison?.sum_diff} />
+                                </div>
+                            </SurfaceCard>
+
+                            <SurfaceCard>
+                                <SectionHeading eyebrow="Faixas" title="Distribuição numérica" />
                                 <div className="space-y-3">
-                                    {analysis.consecutive_groups?.map((group, index) => (
-                                        <div key={index} className="flex flex-wrap gap-2">
-                                            {group.map((number) => (
-                                                <NumberBall key={`${index}-${number}`} number={number} size="sm" subtle />
-                                            ))}
+                                    {Object.entries(analysis.range_distribution || {}).map(([label, total]) => (
+                                        <InfoRow key={label} label={label} value={total} />
+                                    ))}
+                                </div>
+                            </SurfaceCard>
+
+                            <SurfaceCard>
+                                <SectionHeading eyebrow="Sequências" title="Consecutivos encontrados" />
+                                {analysis.consecutive_count > 0 ? (
+                                    <div className="space-y-3">
+                                        {analysis.consecutive_groups?.map((group, index) => (
+                                            <div key={index} className="flex flex-wrap gap-2">
+                                                {group.map((number) => (
+                                                    <NumberBall key={`${index}-${number}`} number={number} size="sm" subtle />
+                                                ))}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div style={{ color: lotteryPalette.muted }}>
+                                        Nenhuma sequência consecutiva encontrada.
+                                    </div>
+                                )}
+                            </SurfaceCard>
+
+                            <SurfaceCard className="xl:col-span-2">
+                                <SectionHeading eyebrow="Narrativa" title="Leitura automática da combinação" />
+                                <div
+                                    className="rounded-[24px] border px-5 py-4"
+                                    style={{ borderColor: lotteryPalette.line, backgroundColor: lotteryPalette.soft }}
+                                >
+                                    <div
+                                        className="text-2xl font-black tracking-tight"
+                                        style={{ color: lotteryPalette.blueDark }}
+                                    >
+                                        {analysis.narrative?.headline}
+                                    </div>
+                                </div>
+
+                                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                    {analysis.narrative?.insights?.map((item, index) => (
+                                        <div
+                                            key={index}
+                                            className="rounded-[22px] border px-4 py-4 text-sm leading-7 md:text-base"
+                                            style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff' }}
+                                        >
+                                            {item}
                                         </div>
                                     ))}
                                 </div>
-                            ) : (
-                                <div style={{ color: lotteryPalette.muted }}>
-                                    Nenhuma sequência consecutiva encontrada.
-                                </div>
-                            )}
-                        </SurfaceCard>
+                            </SurfaceCard>
 
-                        <SurfaceCard className="xl:col-span-2">
-                            <SectionHeading eyebrow="Narrativa" title="Leitura automática da combinação" />
-                            <div className="rounded-[24px] border px-5 py-4" style={{ borderColor: lotteryPalette.line, backgroundColor: lotteryPalette.soft }}>
-                                <div className="text-2xl font-black tracking-tight" style={{ color: lotteryPalette.blueDark }}>
-                                    {analysis.narrative?.headline}
-                                </div>
-                            </div>
+                            <SurfaceCard className="xl:col-span-2">
+                                <SectionHeading
+                                    eyebrow="Histórico real"
+                                    title="Premiação histórica da sequência"
+                                    description="Veja se essa mesma combinação já alcançou faixas premiáveis em algum concurso do histórico carregado."
+                                />
+                                <HistoricalPrizeSummary summary={analysis.historical_prize_summary} modality={modality} />
+                            </SurfaceCard>
 
-                            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                {analysis.narrative?.insights?.map((item, index) => (
+                            {analysis?.agent ? (
+                                <SurfaceCard className="xl:col-span-2">
+                                    <SectionHeading
+                                        eyebrow="Agente analista"
+                                        title={analysis.agent.title || 'Leitura do agente'}
+                                    />
                                     <div
-                                        key={index}
-                                        className="rounded-[22px] border px-4 py-4 text-sm leading-7 md:text-base"
+                                        className="rounded-[24px] border px-5 py-4 text-[15px] leading-7 md:text-base"
                                         style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff' }}
                                     >
-                                        {item}
+                                        {analysis.agent.summary}
                                     </div>
-                                ))}
-                            </div>
-                        </SurfaceCard>
-
-                        <SurfaceCard className="xl:col-span-2">
-                            <SectionHeading eyebrow="Histórico real" title="Premiação histórica da sequência" description="Veja se essa mesma combinação já alcançou 2, 3, 4 ou 5 acertos em algum concurso do histórico carregado." />
-                            <HistoricalPrizeSummary summary={analysis.historical_prize_summary} drawCount={modality.draw_count} />
-                        </SurfaceCard>
-
-                        {analysis?.agent ? (
-                            <SurfaceCard className="xl:col-span-2">
-                                <SectionHeading eyebrow="Agente analista" title={analysis.agent.title || 'Leitura do agente'} />
-                                <div className="rounded-[24px] border px-5 py-4 text-[15px] leading-7 md:text-base" style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff' }}>
-                                    {analysis.agent.summary}
-                                </div>
-                            </SurfaceCard>
-                        ) : null}
-                    </div>
-                ) : null}
-            </div>
-        </LotteryPage>
+                                </SurfaceCard>
+                            ) : null}
+                        </div>
+                    ) : null}
+                </div>
+            </LotteryPage>
+        </>
     );
 }

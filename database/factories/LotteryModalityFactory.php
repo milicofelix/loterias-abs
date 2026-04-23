@@ -50,4 +50,17 @@ class LotteryModalityFactory extends Factory
             'bet_max_count' => 20,
         ]);
     }
+
+    public function lotofacil(): static
+    {
+        return $this->state(fn () => [
+            'code' => 'lotofacil',
+            'name' => 'Lotofácil',
+            'min_number' => 1,
+            'max_number' => 25,
+            'draw_count' => 15,
+            'bet_min_count' => 15,
+            'bet_max_count' => 20,
+        ]);
+    }
 }

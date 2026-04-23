@@ -1,55 +1,64 @@
-import React from 'react';
-
 export default function NumberPicker({
-    totalNumbers = 80,
+    totalNumbers,
+    startNumber = 1,
+    maxSelection,
     selected = [],
     onChange,
-    maxSelection = 5,
     columns = 10,
 }) {
-    function toggleNumber(n) {
-        const exists = selected.includes(n);
+    const numbers = Array.from({ length: totalNumbers }, (_, index) => startNumber + index);
+
+    function toggleNumber(number) {
+        const exists = selected.includes(number);
 
         if (exists) {
-            onChange(selected.filter((x) => x !== n));
+            onChange(selected.filter((item) => item !== number));
             return;
         }
 
-        if (selected.length >= maxSelection) return;
+        if (selected.length >= maxSelection) {
+            return;
+        }
 
-        onChange([...selected, n].sort((a, b) => a - b));
+        onChange([...selected, number].sort((a, b) => a - b));
     }
 
     return (
         <div className="space-y-4">
             <div
-                className="grid gap-3 justify-items-center"
-                style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+                style={{
+                    display: 'grid',
+                    width: '100%',
+                    gap: '12px',
+                    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                }}
             >
-                {Array.from({ length: totalNumbers }, (_, i) => {
-                    const n = i + 1;
-                    const active = selected.includes(n);
+                {numbers.map((number) => {
+                    const active = selected.includes(number);
 
                     return (
                         <button
-                            key={n}
+                            key={number}
                             type="button"
-                            onClick={() => toggleNumber(n)}
-                            className="flex h-15 w-20 items-center justify-center rounded-full border text-base font-bold"
+                            onClick={() => toggleNumber(number)}
+                            className="min-h-[44px] rounded-full border text-base font-semibold transition"
                             style={{
-                                borderColor: active ? '#2f36b0' : '#b0b0b0',
-                                backgroundColor: active ? '#2f36b0' : '#ffffff',
-                                color: active ? '#ffffff' : '#8f8f8f',
-                                boxShadow: active ? '0 6px 14px rgba(47, 54, 176, 0.18)' : 'none',
+                                width: '100%',
+                                borderColor: active ? '#0c5a96' : '#b8c2d1',
+                                background: active
+                                    ? 'linear-gradient(180deg, #1670b6 0%, #0c5a96 100%)'
+                                    : '#fff',
+                                color: active ? '#fff' : '#667085',
+                                boxShadow: active ? '0 10px 24px rgba(12,90,150,0.20)' : 'none',
                             }}
                         >
-                            {String(n).padStart(2, '0')}
+                            {String(number).padStart(2, '0')}
                         </button>
                     );
                 })}
             </div>
 
-            <div className="text-base font-semibold text-slate-700">
+            <div className="text-sm font-semibold text-slate-700">
                 Selecionados: {selected.length} / {maxSelection}
             </div>
         </div>

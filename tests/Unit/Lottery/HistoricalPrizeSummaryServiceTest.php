@@ -41,3 +41,23 @@ it('returns an empty historical prize summary when the sequence never prizes', f
         ->and($summary['total_prized_occurrences'])->toBe(0)
         ->and($summary['last_occurrence'])->toBeNull();
 });
+
+
+it('considers only the premiable hit tiers for lotofacil', function () {
+    $lotofacil = LotteryModality::factory()->lotofacil()->create();
+
+    $this->createDrawWithNumbers($lotofacil, 1, '2026-01-01', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 20, 21, 22]);
+    $this->createDrawWithNumbers($lotofacil, 2, '2026-01-02', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    $this->createDrawWithNumbers($lotofacil, 3, '2026-01-03', [1, 2, 3, 4, 5, 6, 7, 8, 30, 31, 32, 33, 34, 35, 36]);
+
+    $summary = app(HistoricalPrizeSummaryService::class)->analyze($lotofacil, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 24, 25]);
+
+    expect($summary['best_hit'])->toBe(13)
+        ->and($summary['ever_prized'])->toBeTrue()
+        ->and($summary['hit_counts']['11'])->toBe(0)
+        ->and($summary['hit_counts']['12'])->toBe(1)
+        ->and($summary['hit_counts']['13'])->toBe(1)
+        ->and($summary['hit_counts']['14'])->toBe(0)
+        ->and($summary['hit_counts']['15'])->toBe(0)
+        ->and($summary['total_prized_occurrences'])->toBe(2);
+});

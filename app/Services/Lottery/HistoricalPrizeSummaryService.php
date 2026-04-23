@@ -6,6 +6,11 @@ use App\Models\LotteryModality;
 
 class HistoricalPrizeSummaryService
 {
+    public function __construct(
+        protected LotteryRulesService $rulesService,
+    ) {
+    }
+
     /**
      * @param array<int, int> $numbers
      * @return array<string, mixed>
@@ -72,7 +77,7 @@ class HistoricalPrizeSummaryService
         foreach ($draws as $draw) {
             $hits = count(array_intersect($gameNumbers, $draw['numbers']));
 
-            if ($hits < 2) {
+            if (! $this->rulesService->isPrized($modality, $hits)) {
                 continue;
             }
 
@@ -123,7 +128,7 @@ class HistoricalPrizeSummaryService
     {
         $hitCounts = [];
 
-        for ($hits = 2; $hits <= (int) $modality->draw_count; $hits++) {
+        foreach ($this->rulesService->prizeHitRange($modality) as $hits) {
             $hitCounts[(string) $hits] = 0;
         }
 
