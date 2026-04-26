@@ -1,147 +1,196 @@
 # 🎰 ABS Loterias
 
-Sistema inteligente para análise e geração de jogos de loteria, integrado ao ecossistema **ABS Gestão Financeira**.
+> Plataforma inteligente para análise estatística e geração de jogos de loteria, integrada ao ecossistema **ABS Gestão Financeira**.
 
 ---
 
-## 📌 Sobre o Projeto
+## 🧭 Visão Geral
 
-O **ABS Loterias** é uma plataforma desenvolvida para:
+O **ABS Loterias** foi projetado com foco em:
 
-* 🎯 Gerar jogos com base em análise estatística
-* 📊 Analisar resultados históricos de loterias
-* 🔁 Identificar padrões e repetições
-* 🧠 Aplicar algoritmos inteligentes para sugestão de jogos
-
-Arquitetura híbrida focada em performance e escalabilidade.
+* 🧠 Inteligência estatística aplicada a jogos
+* ⚡ Alta performance com engine dedicada em Go
+* 🧩 Arquitetura modular e escalável
+* 🔗 Integração futura com dados financeiros (ABS)
 
 ---
 
-## 🧠 Arquitetura
+## 🏗️ Arquitetura de Alto Nível
 
 ```text
-Frontend (React + Inertia)
-        ↓
-Backend (Laravel API)
-        ↓
-Engine Inteligente (Go)
-        ↓
-Banco de Dados (MySQL)
+┌──────────────────────────────┐
+│        Frontend (React)      │
+│  Inertia.js + TailwindCSS    │
+└──────────────┬───────────────┘
+               │ HTTP (REST)
+┌──────────────▼───────────────┐
+│      Backend (Laravel)       │
+│  Controllers / Services      │
+│  Regras de negócio           │
+└──────────────┬───────────────┘
+               │ HTTP (Internal API)
+┌──────────────▼───────────────┐
+│   Engine Inteligente (Go)    │
+│  Algoritmos / Score / IA     │
+└──────────────┬───────────────┘
+               │
+        ┌──────▼──────┐
+        │   MySQL     │
+        │  Persistência│
+        └─────────────┘
 ```
 
 ---
 
-## ⚙️ Tecnologias Utilizadas
+## 🧠 Decisão Arquitetural (Por quê Go + PHP?)
 
-### Backend
+| Camada   | Tecnologia | Motivo                      |
+| -------- | ---------- | --------------------------- |
+| Frontend | React      | UI moderna e reativa        |
+| Backend  | Laravel    | Produtividade + ecossistema |
+| Engine   | Go         | Performance e concorrência  |
+| Banco    | MySQL      | Consistência e simplicidade |
 
-* PHP 8.2
-* Laravel 12
-* MySQL
+👉 **Separação crítica:**
 
-### Engine de Cálculo
-
-* Golang
-
-### Frontend
-
-* React
-* Inertia.js
-* TailwindCSS
-
-### Infraestrutura
-
-* Docker
-* Nginx
-* Vite
+* PHP → regras de negócio e orquestração
+* Go → processamento pesado (estatística e geração)
 
 ---
 
-## 🚀 Funcionalidades
+## 🔄 Fluxo de Geração de Jogos
 
-### 🎰 Modalidades
-
-* Mega-Sena
-* Quina
-* Lotofácil
-  *(Estrutura preparada para novas modalidades)*
+```text
+[Usuário]
+   ↓
+Seleciona modalidade + score
+   ↓
+[Frontend React]
+   ↓
+POST /generate-smart
+   ↓
+[Laravel Controller]
+   ↓
+[Service Layer]
+   ↓
+Chamada HTTP → Engine Go
+   ↓
+[Algoritmo Inteligente]
+   ↓
+Cálculo de Score
+   ↓
+Retorno dos jogos
+   ↓
+[Laravel Response]
+   ↓
+[Frontend renderiza]
+```
 
 ---
 
-### 📥 Importação de Resultados
+## 🧩 Estrutura de Código
 
-* Upload manual via planilha
-* Validação de dados
-* Prevenção de duplicidade
+### Backend (Laravel)
+
+```text
+app/
+├── Http/
+│   ├── Controllers/
+│   └── Requests/
+├── Services/
+├── Models/
+└── Actions/
+```
+
+### Frontend (React)
+
+```text
+resources/js/
+├── Pages/
+├── Components/
+└── Layouts/
+```
+
+### Engine (Go)
+
+```text
+lottery-engine/
+├── internal/
+│   ├── engine/
+│   ├── models/
+│   └── analysis/
+├── http/
+└── main.go
+```
 
 ---
 
-### 🧠 Geração Inteligente de Jogos
+## 🧠 Engine Inteligente (Core do Sistema)
 
-Endpoint:
+### Endpoint Principal
 
 ```http
 POST /generate-smart
 ```
 
-Parâmetros:
+### Responsabilidades
 
-```json
-{
-  "modality": "quina",
-  "games": 5,
-  "min_score": 85
-}
-```
+* Geração de combinações válidas
+* Cálculo de score baseado em:
 
-#### Regras:
-
-* Gera jogos com base em análise histórica
-* Aplica score de qualidade
-* Caso não encontre jogos com score mínimo:
-
-  * Retorna os melhores disponíveis
+  * Frequência histórica
+  * Distribuição de números
+  * Evitar padrões ruins
+* Otimização de performance
 
 ---
 
-### 📊 Sistema de Score
+## 📊 Modelo de Score
 
-Os jogos recebem pontuação baseada em:
+O score é baseado em múltiplos fatores:
 
-* Frequência dos números
-* Distribuição equilibrada
-* Padrões estatísticos
+* 📈 Frequência histórica
+* ⚖️ Balanceamento (pares/ímpares)
+* 🔢 Distribuição por faixa
+* 🚫 Penalização de padrões comuns
 
-> ⚠️ Scores acima de 90 são extremamente raros
+> ⚠️ Scores acima de 90 são estatisticamente raros
 
 ---
 
-### 🔁 Combinações Repetidas
-
-Endpoint:
+## 🔁 Análise de Combinações Repetidas
 
 ```http
 GET /modalities/{modality}/repeated-combinations
 ```
 
-Permite identificar:
+### Objetivo:
 
-* Jogos que já se repetiram na história
-* Padrões raros
-
----
-
-### 🎲 Minhas Apostas
-
-* Visualização de jogos gerados
-* Filtros por período
-* Histórico do usuário
+* Identificar repetições históricas
+* Validar padrões raros
+* Suporte a análises avançadas
 
 ---
 
-## 🐳 Ambiente com Docker
+## 📥 Pipeline de Importação
 
-### Subir ambiente
+```text
+Upload CSV/Excel
+      ↓
+Validação de estrutura
+      ↓
+Normalização dos dados
+      ↓
+Verificação de duplicidade
+      ↓
+Persistência no banco
+```
+
+---
+
+## ⚙️ Execução Local
+
+### 🐳 Docker
 
 ```bash
 docker-compose up -d
@@ -149,11 +198,11 @@ docker-compose up -d
 
 ---
 
-### Backend (Laravel)
+### Backend
 
 ```bash
-docker exec -it app php artisan migrate
-docker exec -it app php artisan serve --host=0.0.0.0 --port=8000
+php artisan migrate
+php artisan serve
 ```
 
 ---
@@ -167,7 +216,7 @@ npm run dev
 
 ---
 
-### Engine Go
+### Engine GO
 
 ```bash
 cd lottery-engine
@@ -176,116 +225,90 @@ go run main.go
 
 ---
 
-## 🧪 Testes
+## 🧪 Estratégia de Testes
 
-### Laravel
+### Backend
 
-```bash
-php artisan test
-```
+* Feature Tests
+* Testes de importação
+* Validação de regras
 
----
+### Engine
 
-### Go
-
-```bash
-go test ./...
-```
+* Testes unitários
+* Testes de performance
 
 ---
 
-## 📂 Estrutura do Projeto
+## 📊 Escalabilidade
 
-```text
-app/
- ├── Http/
- ├── Models/
- ├── Services/
+### Horizontal
 
-resources/js/
- ├── Pages/
- ├── Components/
+* Engine Go pode escalar separadamente
+* Possibilidade de múltiplas instâncias
 
-lottery-engine/
- ├── internal/
- ├── engine/
- ├── models/
-```
+### Vertical
+
+* Backend Laravel pode ser otimizado com cache
+* Uso futuro de Redis
 
 ---
 
-## ⚠️ Problemas Conhecidos
+## 🔐 Considerações Técnicas
 
-* Scores muito altos (90+) são difíceis de alcançar
-* Dependência de histórico para melhor performance
-* Possíveis ajustes visuais no frontend
+* API interna desacoplada
+* Engine isolada (facilita evolução para IA)
+* Sistema preparado para:
 
----
-
-## 🛣️ Roadmap
-
-### 🔥 Prioridade
-
-* [ ] Botão de combinações repetidas no frontend
-* [ ] Melhor UX na geração de jogos
-* [ ] Exibição visual do score
+  * Machine Learning
+  * Processamento paralelo
+  * Alto volume de dados
 
 ---
 
-### 🧠 Inteligência
+## 🛣️ Roadmap Estratégico
 
-* [ ] Machine Learning para previsão
-* [ ] Score baseado no usuário
-* [ ] Sugestão automática de jogos
+### Curto Prazo
 
----
-
-### 📊 Estatísticas
-
-* [ ] Números quentes e frios
-* [ ] Frequência por período
-* [ ] Gráficos interativos
+* [ ] UX refinada
+* [ ] Exibição visual de score
+* [ ] Botão de combinações repetidas
 
 ---
 
-## 🔗 Integração com ABS Financeiro
+### Médio Prazo
 
-Possibilidades futuras:
+* [ ] Cache inteligente
+* [ ] Otimização do algoritmo
+* [ ] Dashboard estatístico
 
-* Controle de gastos com apostas
+---
+
+### Longo Prazo
+
+* [ ] Machine Learning
+* [ ] Previsão probabilística
+* [ ] Integração com comportamento do usuário
+
+---
+
+## 🔗 Integração com ABS
+
+Futuras integrações:
+
+* Controle financeiro de apostas
 * ROI por modalidade
-* Histórico financeiro de jogos
+* Análise de performance do usuário
 
 ---
 
-## 🤝 Contribuição
+## 🧱 Princípios de Engenharia Aplicados
 
-1. Fork o projeto
-2. Crie uma branch:
-
-```bash
-git checkout -b feature/minha-feature
-```
-
-3. Commit:
-
-```bash
-git commit -m "feat: minha nova feature"
-```
-
-4. Push:
-
-```bash
-git push origin feature/minha-feature
-```
-
-5. Abra um Pull Request
-
----
-
-## 📄 Licença
-
-Este projeto é privado e pertence ao ecossistema **ABS**.
+* Separation of Concerns
+* Single Responsibility
+* API First
+* Escalabilidade horizontal
+* Fail-safe (fallback de score)
 
 ---
 
@@ -294,4 +317,23 @@ Este projeto é privado e pertence ao ecossistema **ABS**.
 **Adriano Felix de Freitas**
 
 * Desenvolvedor Web
-* Criador do ABS Gestão Financeira
+* Especialista em sistemas de alta complexidade
+* Criador do ecossistema ABS
+
+---
+
+## 📄 Licença
+
+Projeto privado — uso interno ABS
+
+---
+
+## ⭐ Considerações Finais
+
+O **ABS Loterias** já se encontra em um estágio avançado:
+
+* Arquitetura sólida
+* Engine desacoplada
+* Base pronta para IA
+
+👉 Projeto preparado para evoluir de **estatística → inteligência preditiva**
