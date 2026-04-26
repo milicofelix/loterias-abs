@@ -1,59 +1,297 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# 🎰 ABS Loterias
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Sistema inteligente para análise e geração de jogos de loteria, integrado ao ecossistema **ABS Gestão Financeira**.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## 📌 Sobre o Projeto
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+O **ABS Loterias** é uma plataforma desenvolvida para:
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+* 🎯 Gerar jogos com base em análise estatística
+* 📊 Analisar resultados históricos de loterias
+* 🔁 Identificar padrões e repetições
+* 🧠 Aplicar algoritmos inteligentes para sugestão de jogos
 
-## Learning Laravel
+Arquitetura híbrida focada em performance e escalabilidade.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+---
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## 🧠 Arquitetura
 
-## Laravel Sponsors
+```text
+Frontend (React + Inertia)
+        ↓
+Backend (Laravel API)
+        ↓
+Engine Inteligente (Go)
+        ↓
+Banco de Dados (MySQL)
+```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+---
 
-### Premium Partners
+## ⚙️ Tecnologias Utilizadas
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+### Backend
 
-## Contributing
+* PHP 8.2
+* Laravel 12
+* MySQL
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### Engine de Cálculo
 
-## Code of Conduct
+* Golang
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### Frontend
 
-## Security Vulnerabilities
+* React
+* Inertia.js
+* TailwindCSS
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### Infraestrutura
 
-## License
+* Docker
+* Nginx
+* Vite
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+---
+
+## 🚀 Funcionalidades
+
+### 🎰 Modalidades
+
+* Mega-Sena
+* Quina
+* Lotofácil
+  *(Estrutura preparada para novas modalidades)*
+
+---
+
+### 📥 Importação de Resultados
+
+* Upload manual via planilha
+* Validação de dados
+* Prevenção de duplicidade
+
+---
+
+### 🧠 Geração Inteligente de Jogos
+
+Endpoint:
+
+```http
+POST /generate-smart
+```
+
+Parâmetros:
+
+```json
+{
+  "modality": "quina",
+  "games": 5,
+  "min_score": 85
+}
+```
+
+#### Regras:
+
+* Gera jogos com base em análise histórica
+* Aplica score de qualidade
+* Caso não encontre jogos com score mínimo:
+
+  * Retorna os melhores disponíveis
+
+---
+
+### 📊 Sistema de Score
+
+Os jogos recebem pontuação baseada em:
+
+* Frequência dos números
+* Distribuição equilibrada
+* Padrões estatísticos
+
+> ⚠️ Scores acima de 90 são extremamente raros
+
+---
+
+### 🔁 Combinações Repetidas
+
+Endpoint:
+
+```http
+GET /modalities/{modality}/repeated-combinations
+```
+
+Permite identificar:
+
+* Jogos que já se repetiram na história
+* Padrões raros
+
+---
+
+### 🎲 Minhas Apostas
+
+* Visualização de jogos gerados
+* Filtros por período
+* Histórico do usuário
+
+---
+
+## 🐳 Ambiente com Docker
+
+### Subir ambiente
+
+```bash
+docker-compose up -d
+```
+
+---
+
+### Backend (Laravel)
+
+```bash
+docker exec -it app php artisan migrate
+docker exec -it app php artisan serve --host=0.0.0.0 --port=8000
+```
+
+---
+
+### Frontend
+
+```bash
+npm install
+npm run dev
+```
+
+---
+
+### Engine Go
+
+```bash
+cd lottery-engine
+go run main.go
+```
+
+---
+
+## 🧪 Testes
+
+### Laravel
+
+```bash
+php artisan test
+```
+
+---
+
+### Go
+
+```bash
+go test ./...
+```
+
+---
+
+## 📂 Estrutura do Projeto
+
+```text
+app/
+ ├── Http/
+ ├── Models/
+ ├── Services/
+
+resources/js/
+ ├── Pages/
+ ├── Components/
+
+lottery-engine/
+ ├── internal/
+ ├── engine/
+ ├── models/
+```
+
+---
+
+## ⚠️ Problemas Conhecidos
+
+* Scores muito altos (90+) são difíceis de alcançar
+* Dependência de histórico para melhor performance
+* Possíveis ajustes visuais no frontend
+
+---
+
+## 🛣️ Roadmap
+
+### 🔥 Prioridade
+
+* [ ] Botão de combinações repetidas no frontend
+* [ ] Melhor UX na geração de jogos
+* [ ] Exibição visual do score
+
+---
+
+### 🧠 Inteligência
+
+* [ ] Machine Learning para previsão
+* [ ] Score baseado no usuário
+* [ ] Sugestão automática de jogos
+
+---
+
+### 📊 Estatísticas
+
+* [ ] Números quentes e frios
+* [ ] Frequência por período
+* [ ] Gráficos interativos
+
+---
+
+## 🔗 Integração com ABS Financeiro
+
+Possibilidades futuras:
+
+* Controle de gastos com apostas
+* ROI por modalidade
+* Histórico financeiro de jogos
+
+---
+
+## 🤝 Contribuição
+
+1. Fork o projeto
+2. Crie uma branch:
+
+```bash
+git checkout -b feature/minha-feature
+```
+
+3. Commit:
+
+```bash
+git commit -m "feat: minha nova feature"
+```
+
+4. Push:
+
+```bash
+git push origin feature/minha-feature
+```
+
+5. Abra um Pull Request
+
+---
+
+## 📄 Licença
+
+Este projeto é privado e pertence ao ecossistema **ABS**.
+
+---
+
+## 👨‍💻 Autor
+
+**Adriano Felix de Freitas**
+
+* Desenvolvedor Web
+* Criador do ABS Gestão Financeira
