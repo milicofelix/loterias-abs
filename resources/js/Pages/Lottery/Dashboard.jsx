@@ -1,5 +1,5 @@
 import { Link, router, useForm, usePage } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
     BarChart,
     Bar,
@@ -40,6 +40,11 @@ export default function Dashboard({
     latestDrawExplanation = null,
 }) {
     const [selectedWindow, setSelectedWindow] = useState('all');
+    const [insights, setInsights] = useState({
+        dashboardNarrative,
+        latestDrawExplanation,
+    });
+    const [insightsLoading, setInsightsLoading] = useState(false);
     const { flash = {}, auth = {} } = usePage().props;
     const importForm = useForm({ spreadsheet: null });
     const dataHojeISO = () => new Date().toISOString().slice(0, 10);
@@ -50,6 +55,65 @@ export default function Dashboard({
         numbers: Array.from({ length: modality.draw_count }, () => ''),
         observation: '',
     });
+
+
+    useEffect(() => {
+        setInsights({
+            dashboardNarrative,
+            latestDrawExplanation,
+        });
+    }, [dashboardNarrative, latestDrawExplanation, modality.id]);
+
+   useEffect(() => {
+    let isMounted = true;
+    setInsightsLoading(true);
+
+    fetch(`/lottery/modalities/${modality.id}/dashboard-insights`, {
+        headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+    })
+        .then(async (response) => {
+            if (!response.ok) {
+                throw new Error('Falha ao buscar insights do dashboard.');
+            }
+
+            return response.json();
+        })
+        .then((data) => {
+            if (!isMounted) {
+                return;
+            }
+
+            setInsights(data);
+        })
+        .catch(() => {
+            if (!isMounted) {
+                return;
+            }
+
+            setInsights({
+                latestDrawExplanation: null,
+                dashboardNarrative: null,
+            });
+        })
+        .finally(() => {
+            if (!isMounted) {
+                return;
+            }
+
+            setInsightsLoading(false);
+        });
+
+    return () => {
+        isMounted = false;
+    };
+}, [modality.id]);
+
+    const resolvedDashboardNarrative = insights.dashboardNarrative;
+    const resolvedLatestDrawExplanation = insights.latestDrawExplanation;
 
     const selectedFrequencies = useMemo(() => {
         switch (selectedWindow) {
@@ -152,6 +216,7 @@ export default function Dashboard({
                             ? getPlayInstruction(modality)
                             : 'Resultados públicos com uma apresentação mais rica. Para salvar combinações e apostar, entre na sua conta.'
                     }
+                    modality={modality}
                 >
                     <ActionLink href={`/lottery/modalities/${modality.id}/history`}>
                         Ver histórico completo
@@ -221,26 +286,30 @@ export default function Dashboard({
                                     ))}
                                 </div>
 
-                                {latestDrawExplanation ? (
+                                {resolvedLatestDrawExplanation ? (
                                     <div
                                         className="rounded-[22px] border px-5 py-4 text-base leading-8 md:text-lg"
                                         style={{ borderColor: lotteryPalette.line, backgroundColor: lotteryPalette.soft, color: '#23354d' }}
                                     >
                                         <div className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm">
-                                            {latestDrawExplanation.summary ? (
+                                            {resolvedLatestDrawExplanation.summary ? (
                                                 <p className="text-base leading-7 text-slate-700">
-                                                    {latestDrawExplanation.summary}
+                                                    {resolvedLatestDrawExplanation.summary}
                                                 </p>
                                             ) : null}
 
-                                            {Array.isArray(latestDrawExplanation.highlights) && latestDrawExplanation.highlights.length > 0 ? (
+                                            {Array.isArray(resolvedLatestDrawExplanation.highlights) && resolvedLatestDrawExplanation.highlights.length > 0 ? (
                                                 <ul className="mt-4 space-y-2 text-sm text-slate-600">
-                                                    {latestDrawExplanation.highlights.map((item, index) => (
+                                                    {resolvedLatestDrawExplanation.highlights.map((item, index) => (
                                                         <li key={index}>• {item}</li>
                                                     ))}
                                                 </ul>
                                             ) : null}
                                         </div>
+                                    </div>
+                                ) : insightsLoading ? (
+                                    <div className="rounded-2xl border border-slate-200 bg-white/80 p-5 text-sm text-slate-500 shadow-sm">
+                                        Carregando leitura analítica do último concurso...
                                     </div>
                                 ) : null}
                             </div>
@@ -420,11 +489,13 @@ export default function Dashboard({
                         eyebrow="Resumo rápido"
                         title={`Leitura automática da ${modality.name}`}
                         description={
-                            typeof dashboardNarrative === 'string'
-                                ? dashboardNarrative
-                                : dashboardNarrative?.summary ||
-                                  dashboardNarrative?.headline ||
-                                  'Frequências recentes, atrasos e comportamento estatístico organizados de forma mais visual.'
+                            typeof resolvedDashboardNarrative === 'string'
+                                ? resolvedDashboardNarrative
+                                : resolvedDashboardNarrative?.summary ||
+                                  resolvedDashboardNarrative?.headline ||
+                                  (insightsLoading
+                                      ? 'Carregando leitura estratégica completa desta modalidade...'
+                                      : 'Frequências recentes, atrasos e comportamento estatístico organizados de forma mais visual.')
                         }
                     />
 

@@ -30,7 +30,9 @@ class CaixaSpreadsheetImporter
         $sheet = $this->resolveSheet($spreadsheet->getAllSheets(), $modality);
 
         if (! $sheet) {
-            throw new InvalidArgumentException("A aba da modalidade {$modality->name} não foi encontrada no arquivo.");
+            $sheetLabel = strtoupper($modality->code ?? $modality->name);
+
+            throw new InvalidArgumentException("A aba {$sheetLabel} não foi encontrada no arquivo.");
         }
 
         $rows = $sheet->toArray(null, true, true, false);
@@ -40,14 +42,11 @@ class CaixaSpreadsheetImporter
         }
 
         $headers = array_map(fn ($value) => is_string($value) ? trim($value) : $value, $rows[0]);
-        $ballColumns = $this->requiredBallColumns($modality);
-        $requiredColumns = array_merge(['Concurso', 'Data Sorteio'], $ballColumns);
+        $headerMap = $this->buildHeaderMap($headers);
 
-        foreach ($requiredColumns as $column) {
-            if (! in_array($column, $headers, true)) {
-                throw new InvalidArgumentException("Coluna obrigatória ausente: {$column}");
-            }
-        }
+        $contestColumn = $this->resolveHeaderName($headerMap, ['Concurso', 'Nº Concurso', 'Numero Concurso', 'Número Concurso']);
+        $dateColumn = $this->resolveHeaderName($headerMap, ['Data Sorteio', 'Data do Sorteio', 'Data']);
+        $ballColumns = $this->requiredBallColumns($modality, $headerMap);
 
         $imported = 0;
         $existing = 0;
@@ -61,20 +60,20 @@ class CaixaSpreadsheetImporter
                 continue;
             }
 
-            $contestNumber = (int) ($mapped['Concurso'] ?? 0);
+            $contestNumber = (int) ($mapped[$contestColumn] ?? 0);
 
             if ($contestNumber <= 0) {
                 $skipped++;
                 continue;
             }
 
-            $drawDate = $this->parseDate($mapped['Data Sorteio'] ?? null);
+            $drawDate = $this->parseDate($mapped[$dateColumn] ?? null);
             $numbers = array_map(static fn (string $column) => (int) ($mapped[$column] ?? 0), $ballColumns);
 
             $this->validateNumbers($numbers, $modality);
 
             $metadata = $mapped;
-            unset($metadata['Concurso'], $metadata['Data Sorteio']);
+            unset($metadata[$contestColumn], $metadata[$dateColumn]);
             foreach ($ballColumns as $column) {
                 unset($metadata[$column]);
             }
@@ -151,17 +150,71 @@ class CaixaSpreadsheetImporter
     }
 
     /**
+     * @param array<string, string> $headerMap
      * @return array<int, string>
      */
-    protected function requiredBallColumns(LotteryModality $modality): array
+    protected function requiredBallColumns(LotteryModality $modality, array $headerMap): array
     {
         $columns = [];
 
         for ($index = 1; $index <= (int) $modality->draw_count; $index++) {
-            $columns[] = 'Bola' . $index;
+            $columns[] = $this->resolveHeaderName($headerMap, [
+                'Bola' . $index,
+                'Bola ' . $index,
+                'Dezena' . $index,
+                'Dezena ' . $index,
+                $index . 'ª Dezena',
+                $index . 'a Dezena',
+            ], "Coluna obrigatória ausente: Bola{$index}");
         }
 
         return $columns;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function buildHeaderMap(array $headers): array
+    {
+        $map = [];
+
+        foreach ($headers as $header) {
+            if ($header === null || $header === '') {
+                continue;
+            }
+
+            $header = (string) $header;
+            $map[$this->normalizeHeaderName($header)] = $header;
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param array<string, string> $headerMap
+     * @param array<int, string> $candidates
+     */
+    protected function resolveHeaderName(array $headerMap, array $candidates, ?string $errorMessage = null): string
+    {
+        foreach ($candidates as $candidate) {
+            $normalized = $this->normalizeHeaderName($candidate);
+
+            if (isset($headerMap[$normalized])) {
+                return $headerMap[$normalized];
+            }
+        }
+
+        throw new InvalidArgumentException($errorMessage ?? "Coluna obrigatória ausente: {$candidates[0]}");
+    }
+
+    protected function normalizeHeaderName(string $value): string
+    {
+        $value = trim(mb_strtolower($value, 'UTF-8'));
+        $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+        $ascii = $ascii !== false ? $ascii : $value;
+        $ascii = preg_replace('/[^a-z0-9]+/', '', $ascii) ?? $ascii;
+
+        return $ascii;
     }
 
     protected function mapRow(array $headers, array $row): array

@@ -67,6 +67,19 @@ function makeUploadedLotofacilSpreadsheet(array $rows, string $sheetName = 'LOTO
     return makeUploadedLotterySpreadsheet($rows, $headers, $sheetName, $filename);
 }
 
+function makeUploadedMegaSenaSpreadsheet(array $rows, string $sheetName = 'MEGA-SENA', string $filename = 'mega-sena-upload.xlsx'): UploadedFile
+{
+    $headers = ['Concurso', 'Data Sorteio'];
+    for ($i = 1; $i <= 6; $i++) {
+        $headers[] = 'Bola' . $i;
+    }
+    $headers[] = 'observação';
+
+    return makeUploadedLotterySpreadsheet($rows, $headers, $sheetName, $filename);
+}
+
+
+
 it('importa manualmente uma planilha da quina pela interface', function () {
     $user = User::factory()->create();
     actingAs($user);
@@ -114,6 +127,33 @@ it('importa manualmente uma planilha da lotofacil pela interface', function () {
     $response->assertSessionHas('success');
     expect(Draw::count())->toBe(2)
         ->and(Draw::query()->where('lottery_modality_id', $lotofacil->id)->count())->toBe(2);
+});
+
+it('importa manualmente uma planilha da mega-sena pela interface', function () {
+    $user = User::factory()->create();
+    actingAs($user);
+
+    $megaSena = LotteryModality::factory()->megaSena()->create();
+
+    $file = makeUploadedMegaSenaSpreadsheet([
+        [1, '11/03/1996', 4, 5, 30, 33, 41, 52, 'primeiro concurso'],
+        [2, '18/03/1996', 9, 37, 39, 41, 43, 49, 'segundo concurso'],
+    ]);
+
+    $response = $this->post(route('lottery.modalities.import-spreadsheet', $megaSena), [
+        'spreadsheet' => $file,
+    ]);
+
+    $response->assertRedirect();
+    $response->assertSessionHas('success');
+    $response->assertSessionHas('import_result', function (array $result) {
+        return $result['imported'] === 2
+            && $result['existing'] === 0
+            && $result['skipped'] === 0
+            && $result['filename'] === 'mega-sena-upload.xlsx';
+    });
+
+    expect(Draw::query()->where('lottery_modality_id', $megaSena->id)->count())->toBe(2);
 });
 
 it('ignora concursos já existentes no upload manual', function () {

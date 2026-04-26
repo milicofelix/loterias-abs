@@ -1,4 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
+import LotteryLogo from '../Lottery/components/LotteryLogo';
 
 export default function Login({ status, canResetPassword = false }) {
     const { data, setData, post, processing, errors } = useForm({
@@ -41,7 +42,7 @@ export default function Login({ status, canResetPassword = false }) {
                                 </div>
 
                                 <h1 className="mt-5 text-5xl font-black leading-none tracking-tight">
-                                    ABS
+                                    <LotteryLogo size="lg" />
                                     <span className="block">Loterias Inteligente</span>
                                 </h1>
 

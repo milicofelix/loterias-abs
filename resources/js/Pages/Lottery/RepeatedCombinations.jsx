@@ -19,6 +19,7 @@ export default function RepeatedCombinations({ modality, items = [], meta = null
                     contest={modality?.name}
                     subtitle="Veja quais sequências já apareceram mais de uma vez no histórico oficial carregado."
                     art="single"
+                    modality={modality}
                 >
                     <ActionLink href={`/lottery/modalities/${modality.id}`}>
                         Voltar ao painel

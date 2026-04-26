@@ -34,8 +34,10 @@ class SmartGameGeneratorGatewayService
     {
         $strategy = (string) ($options['strategy'] ?? 'balanced');
         $games = (int) ($options['games'] ?? 5);
-        $candidatePool = (int) ($options['candidate_pool'] ?? match ($modality->code) {
+        $modalityCode = str_replace('-', '_', strtolower(trim((string) $modality->code)));
+        $candidatePool = (int) ($options['candidate_pool'] ?? match ($modalityCode) {
             'lotofacil' => 4000,
+            'mega_sena' => 3500,
             'quina' => 2000,
             default => 2000,
         });
@@ -61,7 +63,7 @@ class SmartGameGeneratorGatewayService
 
         $payload = [
             'modality' => [
-                'code' => $modality->code,
+                'code' => $modalityCode,
                 'min_number' => (int) $modality->min_number,
                 'max_number' => (int) $modality->max_number,
                 'draw_count' => (int) $modality->draw_count,

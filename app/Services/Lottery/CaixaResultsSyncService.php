@@ -51,6 +51,11 @@ class CaixaResultsSyncService
         return $this->syncByCode('lotofacil');
     }
 
+    public function syncMegaSena(): array
+    {
+        return $this->syncByCode('mega_sena');
+    }
+
     protected function syncByCode(string $code): array
     {
         $modality = LotteryModality::query()

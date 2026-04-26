@@ -28,6 +28,7 @@ export default function History({ modality, draws, filters }) {
                     contest="Linha do tempo dos concursos"
                     subtitle="Busque concursos específicos e navegue pelos sorteios anteriores com uma leitura mais limpa e visual."
                     art="single"
+                    modality={modality}
                 >
                     <ActionLink href={`/lottery/modalities/${modality.id}`}>Voltar ao painel</ActionLink>
                     <ActionLink href={`/lottery/modalities/${modality.id}/play`} variant="secondary">

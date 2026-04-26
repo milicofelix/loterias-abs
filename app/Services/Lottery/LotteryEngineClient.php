@@ -17,7 +17,11 @@ class LotteryEngineClient
             ->post($baseUrl . '/v1/generate-smart', $payload);
 
         if (! $response->successful()) {
-            throw new RuntimeException('Falha ao comunicar com o motor de geração.');
+            throw new RuntimeException(sprintf(
+                'Falha ao comunicar com o motor de geração. HTTP %s: %s',
+                $response->status(),
+                mb_substr((string) $response->body(), 0, 1000)
+            ));
         }
 
         $data = $response->json();
@@ -39,7 +43,11 @@ class LotteryEngineClient
             ->post($baseUrl . '/v1/repeated-combinations', $payload);
 
         if (! $response->successful()) {
-            throw new RuntimeException('Falha ao comunicar com o motor de combinações repetidas.');
+            throw new RuntimeException(sprintf(
+                'Falha ao comunicar com o motor de combinações repetidas. HTTP %s: %s',
+                $response->status(),
+                mb_substr((string) $response->body(), 0, 1000)
+            ));
         }
 
         $data = $response->json();

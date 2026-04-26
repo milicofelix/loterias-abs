@@ -27,11 +27,11 @@ export function getPlayInstruction(modality) {
 }
 
 export function supportsCaixaOperations(modality) {
-    return ['quina', 'lotofacil'].includes(modality?.code);
+    return ['quina', 'lotofacil', 'mega_sena'].includes(modality?.code);
 }
 
 export function supportsSmartGeneration(modality) {
-    return ['quina', 'lotofacil'].includes(modality?.code);
+    return ['quina', 'lotofacil', 'mega_sena'].includes(modality?.code);
 }
 
 export function getImportHelp(modality) {
@@ -41,6 +41,10 @@ export function getImportHelp(modality) {
 
     if (modality?.code === 'quina') {
         return 'Aceita arquivos XLSX e XLS para importar concursos da Quina.';
+    }
+
+    if (modality?.code === 'mega_sena') {
+        return 'Aceita arquivos XLSX e XLS para importar concursos da Mega-Sena.';
     }
 
     return `Aceita arquivos XLSX e XLS para importar concursos de ${modality?.name ?? 'loteria'}.`;

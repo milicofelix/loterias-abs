@@ -310,6 +310,7 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                         contest={modality.name}
                         subtitle={getPlayInstruction(modality)}
                         art="single"
+                        modality={modality}
                     >
                         <ActionLink href={`/lottery/modalities/${modality.id}/combination-history`}>
                             Ver histórico

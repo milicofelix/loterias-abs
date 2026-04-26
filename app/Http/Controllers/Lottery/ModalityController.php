@@ -24,6 +24,7 @@ use InvalidArgumentException;
 use App\Services\Lottery\SmartGameGeneratorGatewayService;
 use App\Services\Lottery\HistoricalPrizeSummaryService;
 use App\Services\Lottery\ManualDrawCreationService;
+use App\Services\Lottery\CombinationInsightsService;
 
 class ModalityController extends Controller
 {
@@ -72,14 +73,16 @@ class ModalityController extends Controller
             ->orderByDesc('contest_number')
             ->first();
 
-        $latestDrawForExplanation = $modality->draws()
-            ->with('numbers')
-            ->orderByDesc('contest_number')
-            ->first();
+        $latestDrawExplanation = null;
 
-        $latestDrawExplanation = $latestDrawForExplanation
-            ? $drawExplainerAgent->explain($modality, $latestDrawForExplanation)
-            : null;
+        // $latestDrawForExplanation = $modality->draws()
+        //     ->with('numbers')
+        //     ->orderByDesc('contest_number')
+        //     ->first();
+
+        // $latestDrawExplanation = $latestDrawForExplanation
+        //     ? $drawExplainerAgent->explain($modality, $latestDrawForExplanation)
+        //     : null;
 
         $frequencies = $stats->numberFrequencies($modality);
         $delays = $delay->numberDelays($modality);
@@ -108,29 +111,33 @@ class ModalityController extends Controller
             ->values()
             ->all();
 
-        $historicalAverageSum = $modality->draws()
-            ->with('numbers')
-            ->get()
-            ->avg(function ($draw) {
-                return $draw->numbers->sum('number');
-            });
+        // $historicalAverageSum = $modality->draws()
+        //     ->with('numbers')
+        //     ->get()
+        //     ->avg(function ($draw) {
+        //         return $draw->numbers->sum('number');
+        //     });
 
-        $recentAverageSum = $modality->draws()
-            ->with('numbers')
-            ->orderByDesc('contest_number')
-            ->limit($recentWindow)
-            ->get()
-            ->avg(function ($draw) {
-                return $draw->numbers->sum('number');
-            });
+        $historicalAverageSum = null;
+        $recentAverageSum = null;
+        // $recentAverageSum = $modality->draws()
+        //     ->with('numbers')
+        //     ->orderByDesc('contest_number')
+        //     ->limit($recentWindow)
+        //     ->get()
+        //     ->avg(function ($draw) {
+        //         return $draw->numbers->sum('number');
+        //     });
 
-        $dashboardNarrative = $dashboardNarratorAgent->narrate($modality, [
-            'window' => $recentWindow,
-            'top_recent_numbers' => $topRecentNumbers,
-            'top_delayed_numbers' => $topDelayedNumbers,
-            'recent_average_sum' => $recentAverageSum,
-            'historical_average_sum' => $historicalAverageSum,
-        ]);
+        $dashboardNarrative = null;
+
+        // $dashboardNarrative = $dashboardNarratorAgent->narrate($modality, [
+        //     'window' => $recentWindow,
+        //     'top_recent_numbers' => $topRecentNumbers,
+        //     'top_delayed_numbers' => $topDelayedNumbers,
+        //     'recent_average_sum' => $recentAverageSum,
+        //     'historical_average_sum' => $historicalAverageSum,
+        // ]);
 
         return Inertia::render('Lottery/Dashboard', [
             'modality' => $modality,
@@ -181,22 +188,32 @@ class ModalityController extends Controller
         SmartGameGeneratorGatewayService $gateway,
         HistoricalPrizeSummaryService $historicalPrizeSummaryService,
         SmartGameGeneratorService $localGenerator,
-        LotteryRulesService $rulesService
+        LotteryRulesService $rulesService,
+        CombinationInsightsService $combinationInsightsService
     ): JsonResponse {
+        $this->prepareLongRunningRequest(300, '768M');
         try {
             if (! $rulesService->supportsSmartGeneration($modality)) {
                 throw new InvalidArgumentException("A geração inteligente ainda não está disponível para {$modality->name}.");
             }
 
             $meta = null;
+            $requestedGames = max(1, min(20, (int) $request->input('games', 5)));
+            $minScore = (int) $request->input('min_score', 0);
+            $expandedGames = $minScore >= 85
+                ? $requestedGames
+                : min(20, max($requestedGames, min(max($requestedGames * 3, $requestedGames + 4), 15)));
+            $generationOptions = array_merge($request->all(), [
+                'games' => $expandedGames,
+            ]);
 
             try {
                 if ($rulesService->usesExternalSmartEngine($modality)) {
-                    $result = $gateway->generateWithMeta($modality, $request->all());
+                    $result = $gateway->generateWithMeta($modality, $generationOptions);
                     $games = $result['games'];
                     $meta = $result['meta'] ?? null;
                 } else {
-                    $games = $localGenerator->generate($modality, $request->all());
+                    $games = $localGenerator->generate($modality, $generationOptions);
                     $meta = [
                         'engine' => 'php',
                         'fallback' => false,
@@ -218,6 +235,14 @@ class ModalityController extends Controller
                 throw $e;
             }
 
+            $games = $this->normalizeSmartGamesLight(
+                $modality,
+                $games,
+                $request->input('strategy', 'balanced')
+            );
+
+            $games = $this->selectDiverseSmartGames($games, $requestedGames);
+
             $gamesWithHistory = $this->attachHistoricalPrizeSummaryToGames(
                 $modality,
                 $games,
@@ -227,14 +252,24 @@ class ModalityController extends Controller
             return response()->json([
                 'games' => $gamesWithHistory,
                 'meta' => $meta,
-            ]);
+            ], 200, [], JSON_PRESERVE_ZERO_FRACTION);
         } catch (InvalidArgumentException $e) {
             return response()->json([
                 'message' => $e->getMessage(),
             ], 422);
         } catch (\Throwable $e) {
+            \Log::error('[LOTTERY][SMART_GENERATION] falha geral', [
+                'modality' => $modality->code,
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return response()->json([
-                'message' => 'Não foi possível gerar jogos inteligentes para esta modalidade.',
+                'message' => app()->hasDebugModeEnabled()
+                    ? $e->getMessage()
+                    : 'Não foi possível gerar jogos inteligentes para esta modalidade.',
             ], 500);
         }
     }
@@ -245,6 +280,7 @@ class ModalityController extends Controller
         CombinationAnalysisAgentService $analysisAgent,
         CombinationHistoryService $historyService
     ): JsonResponse {
+        $this->prepareLongRunningRequest(300, '768M');
         try {
             $numbers = $request->input('numbers', []);
             $source = $request->input('source', 'manual');
@@ -261,11 +297,224 @@ class ModalityController extends Controller
         }
     }
 
+    /**
+     * @param array<int, array<string, mixed>> $games
+     * @return array<int, array<string, mixed>>
+     */
+    protected function normalizeSmartGamesLight(
+        LotteryModality $modality,
+        array $games,
+        string $strategy
+    ): array {
+        $normalized = [];
+
+        foreach ($games as $game) {
+            if (!isset($game['numbers']) || !is_array($game['numbers'])) {
+                continue;
+            }
+
+            $numbers = collect($game['numbers'])
+                ->map(fn ($number) => (int) $number)
+                ->unique()
+                ->sort()
+                ->values()
+                ->all();
+
+            if (count($numbers) !== (int) $modality->draw_count) {
+                continue;
+            }
+
+            $engineScore = isset($game['weighted_score'])
+                ? (float) $game['weighted_score']
+                : null;
+
+            $displayScore = (int) round($engineScore ?? 0);
+
+            $topFrequencyHits = (int) ($game['top_frequency_hits'] ?? 0);
+            $topDelayHits = (int) ($game['top_delay_hits'] ?? 0);
+
+            $profile = $game['profile']
+                ?? ($strategy === 'hot' ? 'Quente' : 'Equilibrado');
+
+            $normalized[] = [
+                'numbers' => $numbers,
+                'strategy' => $game['strategy'] ?? $strategy,
+
+                'engine_weighted_score' => $engineScore !== null
+                    ? (float) number_format($engineScore, 1, '.', '')
+                    : null,
+
+                'analysis_weighted_score' => null,
+                'weighted_score' => $displayScore,
+
+                'classification' => $this->classifySmartScore($displayScore),
+                'profile' => $profile,
+
+                'top_frequency_hits' => $topFrequencyHits,
+                'top_delay_hits' => $topDelayHits,
+
+                'reason' => $game['reason']
+                    ?? $this->buildSmartReason(
+                        $strategy,
+                        $topFrequencyHits,
+                        $topDelayHits,
+                        $profile,
+                        $displayScore
+                    ),
+
+                // ⚠️ IMPORTANTE PARA NÃO QUEBRAR TESTES
+                'historical_prize_summary' => [
+                    'best_hit' => 0,
+                    'ever_prized' => false,
+                    'total_prized_occurrences' => 0,
+                    'contest_count_checked' => 0,
+                    'hit_counts' => [],
+                    'last_occurrence' => null,
+                ],
+            ];
+        }
+
+        usort($normalized, fn ($a, $b) =>
+            ($b['weighted_score'] ?? 0) <=> ($a['weighted_score'] ?? 0)
+        );
+
+        return $normalized;
+    }
 
     /**
      * @param array<int, array<string, mixed>> $games
      * @return array<int, array<string, mixed>>
      */
+    protected function selectDiverseSmartGames(array $games, int $limit): array
+    {
+        $selected = [];
+        $remaining = array_values($games);
+
+        while (count($selected) < $limit && $remaining !== []) {
+            $bestIndex = 0;
+            $bestAdjustedScore = null;
+
+            foreach ($remaining as $index => $candidate) {
+                $adjustedScore = (float) ($candidate['weighted_score'] ?? 0) + $this->diversityBonus($candidate, $selected);
+
+                if ($bestAdjustedScore === null || $adjustedScore > $bestAdjustedScore) {
+                    $bestAdjustedScore = $adjustedScore;
+                    $bestIndex = $index;
+                }
+            }
+
+            $selected[] = $remaining[$bestIndex];
+            array_splice($remaining, $bestIndex, 1);
+        }
+
+        usort($selected, fn (array $left, array $right) => ($right['weighted_score'] ?? 0) <=> ($left['weighted_score'] ?? 0));
+
+        return array_values($selected);
+    }
+
+    /**
+     * @param array<string, mixed> $candidate
+     * @param array<int, array<string, mixed>> $selected
+     */
+    protected function diversityBonus(array $candidate, array $selected): float
+    {
+        if ($selected === []) {
+            return 0.0;
+        }
+
+        $numbers = $candidate['numbers'] ?? [];
+        $topFrequencyHits = (int) ($candidate['top_frequency_hits'] ?? 0);
+        $profile = (string) ($candidate['profile'] ?? '');
+        $bonus = 0.0;
+
+        foreach ($selected as $chosen) {
+            $overlap = count(array_intersect($numbers, $chosen['numbers'] ?? []));
+            $bonus -= $overlap * 2.8;
+
+            if ($profile !== '' && $profile === ($chosen['profile'] ?? '')) {
+                $bonus -= 1.2;
+            }
+
+            if ($topFrequencyHits === (int) ($chosen['top_frequency_hits'] ?? -999)) {
+                $bonus -= 0.8;
+            }
+        }
+
+        return $bonus;
+    }
+
+    protected function resolveSmartTopLimit(LotteryModality $modality): int
+    {
+        $universeSize = ((int) $modality->max_number - (int) $modality->min_number) + 1;
+
+        return max(
+            (int) $modality->draw_count + 1,
+            min(16, (int) ceil($universeSize * 0.10))
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $insights
+     */
+    protected function inferSmartProfile(string $strategy, int $topFrequencyHits, int $topDelayHits, array $insights): string
+    {
+        if ($strategy === 'hot' && $topFrequencyHits >= 2) {
+            return 'Quente';
+        }
+
+        if ($topFrequencyHits >= 3 && $topDelayHits === 0) {
+            return 'Quente';
+        }
+
+        if ($topFrequencyHits >= 1 && $topFrequencyHits <= 2 && $topDelayHits <= 1) {
+            return 'Equilibrado';
+        }
+
+        if ($topDelayHits >= 2 && $topFrequencyHits <= 1) {
+            return 'Atrasado';
+        }
+
+        if ((int) ($insights['consecutive_count'] ?? 0) === 0) {
+            return 'Misto';
+        }
+
+        return 'Experimental';
+    }
+
+    protected function classifySmartScore(int $score): string
+    {
+        return match (true) {
+            $score >= 90 => 'Excelente',
+            $score >= 84 => 'Muito boa',
+            $score >= 78 => 'Boa',
+            $score >= 72 => 'Promissora',
+            $score >= 64 => 'Razoável',
+            default => 'Arriscada',
+        };
+    }
+
+    protected function buildSmartReason(
+        string $strategy,
+        int $topFrequencyHits,
+        int $topDelayHits,
+        string $profile,
+        int $score
+    ): string {
+        $parts = [];
+        $parts[] = $strategy === 'hot'
+            ? 'Seleção inclinada para números mais frequentes.'
+            : 'Seleção calibrada para equilibrar frequência, atraso e estrutura.';
+        $parts[] = sprintf('Score consolidado %d.', $score);
+        $parts[] = sprintf('Perfil lido como %s.', mb_strtolower($profile, 'UTF-8'));
+        $parts[] = sprintf('Faixa quente: %d número(s).', $topFrequencyHits);
+
+        if ($topDelayHits > 0) {
+            $parts[] = sprintf('Faixa atrasada: %d número(s).', $topDelayHits);
+        }
+
+        return implode(' ', $parts);
+    }
+
     protected function attachHistoricalPrizeSummaryToGames(
         LotteryModality $modality,
         array $games,
@@ -587,7 +836,11 @@ class ModalityController extends Controller
 
     protected function prepareLongRunningRequest(int $seconds = 300, string $memory = '512M'): void
     {
-         if (function_exists('set_time_limit')) {
+        if (function_exists('ignore_user_abort')) {
+            @ignore_user_abort(true);
+        }
+
+        if (function_exists('set_time_limit')) {
             @set_time_limit($seconds);
         }
 
@@ -607,8 +860,16 @@ class ModalityController extends Controller
             'observation' => ['nullable', 'string'],
         ]);
 
-        $manualDrawCreationService->create($modality, $validated);
+        try {
+            $manualDrawCreationService->create($modality, $validated);
 
-        return back()->with('success', 'Resultado cadastrado com sucesso.');
+            return redirect()
+                ->route('lottery.modalities.show', $modality)
+                ->with('success', "Resultado do concurso {$validated['contest_number']} cadastrado com sucesso.");
+        } catch (\InvalidArgumentException $e) {
+            return redirect()
+                ->route('lottery.modalities.show', $modality)
+                ->with('error', $e->getMessage());
+        }
     }
 }

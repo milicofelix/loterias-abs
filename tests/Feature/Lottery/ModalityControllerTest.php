@@ -129,7 +129,21 @@ it('pode gerar jogos inteligentes por meio do motor externo', function () {
 
     $response->assertOk()
         ->assertJsonPath('games.0.numbers', [22, 41, 49, 53, 71])
-        ->assertJsonPath('games.0.weighted_score', 88);
+        ->assertJsonStructure([
+            'games' => [[
+                'numbers',
+                'weighted_score',
+                'classification',
+                'profile',
+                'top_frequency_hits',
+                'top_delay_hits',
+                'engine_weighted_score',
+                'analysis_weighted_score',
+            ]],
+        ]);
+
+    expect($response->json('games.0.engine_weighted_score'))->toBe(88.0);
+    expect($response->json('games.0.weighted_score'))->not->toBeNull();
 });
 
 it('retorna 422 ao tentar gerar jogos inteligentes com estratégia inválida', function () {

@@ -27,6 +27,9 @@ Route::prefix('lottery')->group(function () {
 
     Route::get('/modalities/{modality}', [ModalityController::class, 'show'])
         ->name('lottery.modalities.show');
+    
+    Route::get('/modalities/{modality}/dashboard-insights', [ModalityController::class, 'dashboardInsights'])
+        ->name('lottery.modalities.dashboard-insights');
 
     Route::post('/modalities/{modality}/generate', [ModalityController::class, 'generate']);
 
@@ -56,6 +59,9 @@ Route::prefix('lottery')->group(function () {
 
         Route::get('/modalities/{modality}/combination-history', [ModalityController::class, 'combinationHistory'])
             ->name('lottery.combination-history');
+
+        Route::post('/modalities/{modality}/sync-results', [ModalityController::class, 'syncResults'])
+            ->name('lottery.modalities.sync-results');
     });
 
     Route::get('/modalities/{modality}/history', [ModalityController::class, 'history'])
@@ -75,7 +81,4 @@ Route::prefix('lottery')->group(function () {
 
     Route::delete('/modalities/{modality}/combination-history', [ModalityController::class, 'clearCombinationHistory'])
         ->name('lottery.combination-history.clear');
-
-    Route::post('/modalities/{modality}/sync-results', [ModalityController::class, 'syncResults'])
-        ->name('lottery.modalities.sync-results');
 });

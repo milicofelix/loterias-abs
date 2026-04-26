@@ -56,6 +56,7 @@ export default function CombinationHistory({ modality, items, filters = {} }) {
                     contest={modality.name}
                     subtitle="Reabra análises, compare ideias e transforme combinações promissoras em apostas com um visual mais rico e organizado."
                     art="single"
+                    modality={modality}
                 >
                     <ActionLink href={`/lottery/modalities/${modality.id}/play`}>Nova análise</ActionLink>
                     <ActionLink href={`/lottery/modalities/${modality.id}/bets`} variant="secondary">

@@ -58,7 +58,7 @@ class LotteryRulesService
 
     public function supportsCaixaSpreadsheet(LotteryModality $modality): bool
     {
-        return in_array($modality->code, ['quina', 'lotofacil'], true);
+        return in_array($modality->code, ['quina', 'lotofacil', 'mega_sena'], true);
     }
 
     public function supportsCaixaSync(LotteryModality $modality): bool
@@ -68,7 +68,7 @@ class LotteryRulesService
 
     public function supportsSmartGeneration(LotteryModality $modality): bool
     {
-        return in_array($modality->code, ['quina', 'lotofacil'], true);
+        return in_array($modality->code, ['quina', 'lotofacil', 'mega_sena'], true);
     }
 
     /**
@@ -85,7 +85,7 @@ class LotteryRulesService
 
     public function smartGenerationModalities(): array
     {
-        return ['quina', 'lotofacil'];
+        return ['quina', 'lotofacil', 'mega_sena'];
     }
 
     public function usesExternalSmartEngine(LotteryModality $modality): bool

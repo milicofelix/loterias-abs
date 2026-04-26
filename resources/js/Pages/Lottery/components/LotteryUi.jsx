@@ -27,8 +27,50 @@ export function LotteryPage({ children }) {
     );
 }
 
-export function HeroBanner({ eyebrow, title, subtitle, contest, children, art = 'stack' }) {
-    const image = art === 'single' ? '/lottery-assets/quina-ticket-single.png' : '/lottery-assets/quina-ticket-stack.png';
+const modalityAssetMap = {
+    quina: {
+        single: '/lottery-assets/quina-ticket-single.png',
+        stack: '/lottery-assets/quina-ticket-stack.png',
+        alt: 'Bilhete ilustrativo da Quina',
+    },
+    lotofacil: {
+        single: '/lottery-assets/lotofacil-ticket-single.png',
+        stack: '/lottery-assets/lotofacil-ticket-stack.png',
+        alt: 'Bilhete ilustrativo da Lotofácil',
+    },
+    mega_sena: {
+        single: '/lottery-assets/mega-sena-ticket-single.png',
+        stack: '/lottery-assets/mega-sena-ticket-stack.png',
+        alt: 'Bilhete ilustrativo da Mega-Sena',
+    },
+};
+
+function normalizeModalityCode(modality) {
+    return String(modality?.code || modality?.slug || modality?.name || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[\s-]+/g, '_');
+}
+
+function resolveModalityAsset(modality, art = 'stack') {
+    const code = normalizeModalityCode(modality);
+
+    return modalityAssetMap[code]?.[art]
+        ? {
+              src: modalityAssetMap[code][art],
+              alt: modalityAssetMap[code].alt,
+          }
+        : {
+              src: art === 'single'
+                  ? '/lottery-assets/default-ticket-single.png'
+                  : '/lottery-assets/default-ticket-stack.png',
+              alt: 'Bilhete ilustrativo da modalidade',
+          };
+}
+
+export function HeroBanner({ eyebrow, title, subtitle, contest, children, art = 'stack', modality = null }) {
+    const image = resolveModalityAsset(modality, art);
 
     return (
         <section
@@ -42,8 +84,8 @@ export function HeroBanner({ eyebrow, title, subtitle, contest, children, art = 
             <div className="absolute inset-y-0 right-0 hidden w-[40%] items-center justify-center lg:flex">
                 <div className="absolute inset-0 bg-gradient-to-l from-white/5 to-transparent" />
                 <img
-                    src={image}
-                    alt="Bilhete ilustrativo da Quina"
+                    src={image.src}
+                    alt={image.alt}
                     className="relative max-h-[360px] translate-x-6 drop-shadow-[0_30px_40px_rgba(3,13,31,0.45)]"
                 />
             </div>

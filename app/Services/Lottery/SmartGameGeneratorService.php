@@ -140,6 +140,8 @@ class SmartGameGeneratorService
         $warmTake = max($drawCount + 8, (int) ceil($drawCount * 2.5));
 
         if ($strategy === 'hot') {
+            [$hotPrimaryCount, $hotSecondaryCount] = $this->resolveHotComposition($drawCount);
+
             $hotBucket = collect($frequencies)
                 ->sortDesc()
                 ->keys()
@@ -157,8 +159,8 @@ class SmartGameGeneratorService
                 ->all();
 
             return $this->pickUniqueNumbers([
-                ['pool' => $hotBucket, 'count' => min($drawCount, max(3, (int) round($drawCount * 0.45)))],
-                ['pool' => $warmBucket, 'count' => min($drawCount, max(1, (int) round($drawCount * 0.20)))],
+                ['pool' => $hotBucket, 'count' => $hotPrimaryCount],
+                ['pool' => $warmBucket, 'count' => $hotSecondaryCount],
                 ['pool' => range($modality->min_number, $modality->max_number), 'count' => $drawCount],
             ], $drawCount, $modality);
         }
@@ -181,11 +183,42 @@ class SmartGameGeneratorService
 
         $neutralBucket = range($modality->min_number, $modality->max_number);
 
+        [$balancedHotCount, $balancedDelayCount] = $this->resolveBalancedComposition($drawCount);
+
         return $this->pickUniqueNumbers([
-            ['pool' => $hotBucket, 'count' => min($drawCount, max(2, (int) round($drawCount * 0.35)))],
-            ['pool' => $delayBucket, 'count' => min($drawCount, max(1, (int) round($drawCount * 0.15)))],
+            ['pool' => $hotBucket, 'count' => $balancedHotCount],
+            ['pool' => $delayBucket, 'count' => $balancedDelayCount],
             ['pool' => $neutralBucket, 'count' => $drawCount],
         ], $drawCount, $modality);
+    }
+
+
+    /**
+     * @return array{0:int,1:int}
+     */
+    protected function resolveBalancedComposition(int $drawCount): array
+    {
+        $profiles = [
+            [max(1, (int) round($drawCount * 0.20)), max(0, (int) round($drawCount * 0.20))],
+            [max(2, (int) round($drawCount * 0.35)), max(1, (int) round($drawCount * 0.15))],
+            [max(2, (int) round($drawCount * 0.40)), max(0, (int) round($drawCount * 0.20))],
+        ];
+
+        return $profiles[array_rand($profiles)];
+    }
+
+    /**
+     * @return array{0:int,1:int}
+     */
+    protected function resolveHotComposition(int $drawCount): array
+    {
+        $profiles = [
+            [max(2, (int) round($drawCount * 0.40)), max(1, (int) round($drawCount * 0.20))],
+            [max(3, (int) round($drawCount * 0.45)), max(1, (int) round($drawCount * 0.15))],
+            [max(2, (int) round($drawCount * 0.50)), max(2, (int) round($drawCount * 0.20))],
+        ];
+
+        return $profiles[array_rand($profiles)];
     }
 
     /**
@@ -460,9 +493,11 @@ class SmartGameGeneratorService
     protected function classifyScore(int $score): string
     {
         return match (true) {
-            $score >= 85 => 'Excelente',
-            $score >= 72 => 'Boa',
-            $score >= 58 => 'Razoável',
+            $score >= 90 => 'Excelente',
+            $score >= 84 => 'Muito boa',
+            $score >= 78 => 'Boa',
+            $score >= 72 => 'Promissora',
+            $score >= 64 => 'Razoável',
             default => 'Arriscada',
         };
     }
@@ -472,19 +507,27 @@ class SmartGameGeneratorService
      */
     protected function inferProfile(string $strategy, int $topFrequencyHits, int $topDelayHits, array $pattern): string
     {
-        if ($strategy === 'hot' || $topFrequencyHits >= 3) {
+        if ($strategy === 'hot' && $topFrequencyHits >= 2) {
             return 'Quente';
         }
 
-        if ($topDelayHits >= 2) {
-            return 'Agressivo';
+        if ($topFrequencyHits >= 3 && $topDelayHits === 0) {
+            return 'Quente';
         }
 
-        if ((int) ($pattern['consecutive_count'] ?? 0) === 0) {
+        if ($topFrequencyHits >= 1 && $topFrequencyHits <= 2 && $topDelayHits <= 1) {
             return 'Equilibrado';
         }
 
-        return 'Misto';
+        if ($topDelayHits >= 2 && $topFrequencyHits <= 1) {
+            return 'Atrasado';
+        }
+
+        if ((int) ($pattern['consecutive_count'] ?? 0) === 0) {
+            return 'Misto';
+        }
+
+        return 'Experimental';
     }
 
     protected function buildReason(
@@ -506,7 +549,7 @@ class SmartGameGeneratorService
         $parts[] = sprintf('Acertos no grupo quente: %d.', $topFrequencyHits);
 
         if ($topDelayHits > 0) {
-            $parts[] = sprintf('Presença controlada de atrasados: %d.', $topDelayHits);
+            $parts[] = sprintf('Faixa atrasada: %d.', $topDelayHits);
         }
 
         if ($patternQuality >= 85) {
