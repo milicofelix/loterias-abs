@@ -1,0 +1,927 @@
+openapi: 3.0.3
+info:
+  title: ABS Loterias API
+  version: 1.0.0
+  description: |
+    Documentação OpenAPI do módulo ABS Loterias.
+
+    A aplicação possui duas superfícies HTTP principais:
+    - Aplicação Laravel/Inertia, exposta em `/lottery`, responsável por telas, persistência, importação, histórico e orquestração.
+    - Engine interna em Go, exposta em `/v1`, responsável por processamento pesado, geração inteligente e combinações repetidas.
+
+    Observação: algumas rotas Laravel retornam páginas Inertia/HTML e são documentadas aqui como contratos de navegação. As rotas de geração/análise retornam JSON.
+  contact:
+    name: Adriano Felix de Freitas
+  license:
+    name: Projeto privado - ABS
+servers:
+  - url: http://localhost:8081
+    description: Aplicação Laravel local
+  - url: http://lottery_engine:8080
+    description: Engine Go interna
+
+tags:
+  - name: Laravel - Modalidades
+    description: Rotas principais de modalidades e dashboards
+  - name: Laravel - Jogos
+    description: Geração, análise, apostas e histórico
+  - name: Laravel - Importação
+    description: Importação manual e sincronização CAIXA
+  - name: Engine Go
+    description: API interna de alta performance
+
+paths:
+  /lottery/modalities:
+    get:
+      tags: [Laravel - Modalidades]
+      summary: Lista modalidades de loteria ativas
+      description: Retorna a tela Inertia com as modalidades ativas cadastradas no sistema.
+      operationId: listLotteryModalities
+      responses:
+        '200':
+          description: Página Inertia com lista de modalidades
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /api/lottery/modalities/{modality}:
+    get:
+      tags: [Laravel - Modalidades]
+      summary: Exibe dashboard de uma modalidade
+      description: Retorna dados estatísticos, últimos concursos, frequências, atrasos e regras da modalidade.
+      operationId: showLotteryModality
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+      responses:
+        '200':
+          description: Página Inertia do dashboard da modalidade
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/lottery/modalities/{modality}/dashboard-insights:
+    get:
+      tags: [Laravel - Modalidades]
+      summary: Retorna insights do dashboard da modalidade
+      operationId: getDashboardInsights
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+      responses:
+        '200':
+          description: Insights/dados auxiliares do dashboard
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /lottery/modalities/{modality}/generate:
+    post:
+      tags: [Laravel - Jogos]
+      summary: Gera uma combinação simples
+      description: Gera números válidos para a modalidade usando o gerador local simples.
+      operationId: generateSimpleGame
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimpleGenerateRequest'
+            example:
+              count: 1
+      responses:
+        '200':
+          description: Combinação gerada
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [numbers]
+                properties:
+                  numbers:
+                    type: array
+                    items:
+                      type: integer
+                    example: [3, 15, 22, 41, 58]
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/lottery/modalities/{modality}/generate-smart:
+    post:
+      tags: [Laravel - Jogos]
+      summary: Gera jogos inteligentes
+      description: |
+        Gera jogos com score, classificação, perfil e resumo histórico.
+
+        Quando a modalidade usa engine externa, o Laravel chama a API Go `/v1/generate-smart`.
+        Caso o score mínimo seja alto, o sistema pode retornar os melhores jogos disponíveis.
+      operationId: generateSmartGames
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SmartGenerateRequest'
+            example:
+              games: 5
+              strategy: balanced
+              min_score: 85
+              candidate_pool: 2000
+      responses:
+        '200':
+          description: Jogos inteligentes gerados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmartGenerateResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /lottery/modalities/{modality}/analyze:
+    post:
+      tags: [Laravel - Jogos]
+      summary: Analisa uma combinação informada
+      description: Analisa uma combinação manual ou gerada e salva o histórico quando aplicável.
+      operationId: analyzeCombination
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+            example:
+              numbers: [1, 5, 12, 27, 33]
+              source: manual
+      responses:
+        '200':
+          description: Resultado da análise
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisResult'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/lottery/modalities/{modality}/repeated-combinations:
+    get:
+      tags: [Laravel - Jogos]
+      summary: Exibe combinações repetidas da modalidade
+      description: Consulta a engine Go e renderiza a página Inertia com combinações históricas repetidas.
+      operationId: showRepeatedCombinations
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+      responses:
+        '200':
+          description: Página Inertia com combinações repetidas
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/lottery/modalities/{modality}/history:
+    get:
+      tags: [Laravel - Modalidades]
+      summary: Lista histórico oficial de concursos
+      operationId: listDrawHistory
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+        - name: q
+          in: query
+          required: false
+          description: Número do concurso para filtro exato
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Página Inertia com concursos paginados
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /api/lottery/modalities/{modality}/import-spreadsheet:
+    post:
+      tags: [Laravel - Importação]
+      summary: Importa resultados por planilha CAIXA
+      description: Rota autenticada. Aceita arquivos XLS/XLSX e importa concursos oficiais.
+      operationId: importSpreadsheet
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [spreadsheet]
+              properties:
+                spreadsheet:
+                  type: string
+                  format: binary
+      responses:
+        '302':
+          description: Redireciona de volta com flash de sucesso ou erro
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/lottery/modalities/{modality}/sync-results:
+    post:
+      tags: [Laravel - Importação]
+      summary: Sincroniza resultados oficiais da CAIXA
+      description: Rota autenticada. Baixa/processa resultados oficiais da modalidade, quando suportado.
+      operationId: syncCaixaResults
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+      responses:
+        '302':
+          description: Redireciona de volta com flash de sucesso ou erro
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /api/lottery/modalities/{modality}/draws:
+    post:
+      tags: [Laravel - Importação]
+      summary: Cadastra manualmente um concurso
+      description: Rota autenticada. Cria resultado oficial manual com concurso, data e números.
+      operationId: storeManualDraw
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualDrawRequest'
+            example:
+              contest_number: 1234
+              draw_date: '2026-04-25'
+              numbers: [1, 7, 12, 33, 44]
+              observation: Cadastro manual
+      responses:
+        '302':
+          description: Redireciona para o dashboard da modalidade com flash message
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/lottery/modalities/{modality}/play:
+    get:
+      tags: [Laravel - Jogos]
+      summary: Abre tela de jogo/aposta da modalidade
+      operationId: playModality
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+        - name: history_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: numbers
+          in: query
+          required: false
+          description: Números pré-preenchidos separados por vírgula
+          schema:
+            type: string
+            example: '1,5,12,27,33'
+      responses:
+        '200':
+          description: Página Inertia de jogo
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /api/lottery/modalities/{modality}/combination-history:
+    get:
+      tags: [Laravel - Jogos]
+      summary: Lista histórico de combinações do usuário na modalidade
+      operationId: listCombinationHistory
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+            example: manual
+      responses:
+        '200':
+          description: Página Inertia com histórico paginado
+          content:
+            text/html:
+              schema:
+                type: string
+    delete:
+      tags: [Laravel - Jogos]
+      summary: Limpa todo histórico de combinações da modalidade
+      operationId: clearCombinationHistory
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+      responses:
+        '302':
+          description: Redireciona com mensagem de sucesso
+
+  /api/lottery/modalities/{modality}/combination-history/{item}/register-bet:
+    post:
+      tags: [Laravel - Jogos]
+      summary: Registra uma combinação como aposta
+      operationId: registerCombinationBet
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+        - $ref: '#/components/parameters/HistoryItemId'
+      responses:
+        '200':
+          description: Aposta registrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    $ref: '#/components/schemas/RegisteredBet'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/lottery/modalities/{modality}/combination-history/{item}/check-bet:
+    get:
+      tags: [Laravel - Jogos]
+      summary: Confere uma aposta registrada contra o concurso vinculado
+      operationId: checkCombinationBet
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+        - $ref: '#/components/parameters/HistoryItemId'
+      responses:
+        '200':
+          description: Página Inertia com conferência da aposta
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Redireciona para login quando não autenticado
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/lottery/modalities/{modality}/combination-history/{item}:
+    delete:
+      tags: [Laravel - Jogos]
+      summary: Remove item específico do histórico
+      operationId: destroyCombinationHistory
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+        - $ref: '#/components/parameters/HistoryItemId'
+      responses:
+        '302':
+          description: Redireciona com mensagem de sucesso
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/lottery/modalities/{modality}/bets:
+    get:
+      tags: [Laravel - Jogos]
+      summary: Lista apostas registradas de uma modalidade
+      operationId: listModalityBets
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ModalityId'
+        - $ref: '#/components/parameters/DaysFilter'
+      responses:
+        '200':
+          description: Página Inertia com apostas da modalidade
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /api/lottery/my-bets:
+    get:
+      tags: [Laravel - Jogos]
+      summary: Lista todas as apostas do usuário
+      operationId: listMyBets
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DaysFilter'
+      responses:
+        '200':
+          description: Página Inertia com apostas do usuário
+          content:
+            text/html:
+              schema:
+                type: string
+        '302':
+          description: Redireciona para login quando não autenticado
+
+  /api/v1/generate-smart:
+    post:
+      tags: [Engine Go]
+      summary: Engine interna - gera jogos inteligentes
+      description: Endpoint chamado pelo Laravel quando a modalidade utiliza engine externa.
+      operationId: engineGenerateSmart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EngineSmartGenerateRequest'
+            example:
+              modality:
+                code: quina
+                min_number: 1
+                max_number: 80
+                draw_count: 5
+              strategy: balanced
+              games: 5
+              candidate_pool: 2000
+              min_score: 85
+              stats:
+                frequencies:
+                  '1': 20
+                  '2': 18
+                delays:
+                  '1': 3
+                  '2': 10
+                historical_averages:
+                  sum: 202.5
+                  range: 62.1
+      responses:
+        '200':
+          description: Jogos gerados pela engine
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmartGenerateResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/v1/repeated-combinations:
+    post:
+      tags: [Engine Go]
+      summary: Engine interna - identifica combinações repetidas
+      operationId: engineRepeatedCombinations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RepeatedCombinationsRequest'
+      responses:
+        '200':
+          description: Combinações repetidas encontradas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepeatedCombinationsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: laravel_session
+      description: Autenticação padrão Laravel por sessão/cookie.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-TOKEN
+      description: Token CSRF usado em requisições mutáveis no Laravel.
+
+  parameters:
+    ModalityId:
+      name: modality
+      in: path
+      required: true
+      description: ID da modalidade de loteria
+      schema:
+        type: integer
+        minimum: 1
+      example: 1
+    HistoryItemId:
+      name: item
+      in: path
+      required: true
+      description: ID do item de histórico de combinação
+      schema:
+        type: integer
+        minimum: 1
+      example: 10
+    DaysFilter:
+      name: days
+      in: query
+      required: false
+      description: Janela de consulta em dias
+      schema:
+        type: integer
+        enum: [7, 15, 30, 60, 90]
+        default: 30
+
+  responses:
+    ValidationError:
+      description: Erro de validação ou regra de negócio
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Estratégia inválida. Utilize balanced ou hot.
+    Unauthenticated:
+      description: Usuário não autenticado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Faça login para continuar.
+    NotFound:
+      description: Recurso não encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Not Found
+    ServerError:
+      description: Erro interno
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Não foi possível gerar jogos inteligentes para esta modalidade.
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+
+    LotteryModality:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Quina
+        code:
+          type: string
+          example: quina
+        draw_count:
+          type: integer
+          example: 5
+        min_number:
+          type: integer
+          example: 1
+        max_number:
+          type: integer
+          example: 80
+        is_active:
+          type: boolean
+          example: true
+
+    SimpleGenerateRequest:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 1
+          default: 1
+          description: Quantidade de combinações simples solicitadas, quando suportado pelo gerador.
+
+    SmartGenerateRequest:
+      type: object
+      properties:
+        games:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+        strategy:
+          type: string
+          enum: [balanced, hot]
+          default: balanced
+        min_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 0
+        candidate_pool:
+          type: integer
+          minimum: 1
+          description: Quantidade de candidatos avaliados pela engine.
+
+    EngineSmartGenerateRequest:
+      allOf:
+        - $ref: '#/components/schemas/SmartGenerateRequest'
+        - type: object
+          required: [modality, stats]
+          properties:
+            modality:
+              $ref: '#/components/schemas/EngineModality'
+            stats:
+              $ref: '#/components/schemas/EngineStats'
+
+    EngineModality:
+      type: object
+      required: [code, min_number, max_number, draw_count]
+      properties:
+        code:
+          type: string
+          example: quina
+        min_number:
+          type: integer
+          example: 1
+        max_number:
+          type: integer
+          example: 80
+        draw_count:
+          type: integer
+          example: 5
+
+    EngineStats:
+      type: object
+      properties:
+        frequencies:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            '1': 20
+            '2': 18
+        delays:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            '1': 3
+            '2': 10
+        historical_averages:
+          type: object
+          properties:
+            sum:
+              type: number
+              format: float
+              example: 202.5
+            range:
+              type: number
+              format: float
+              example: 62.1
+
+    SmartGenerateResponse:
+      type: object
+      required: [games]
+      properties:
+        games:
+          type: array
+          items:
+            $ref: '#/components/schemas/SmartGame'
+        meta:
+          type: object
+          nullable: true
+          additionalProperties: true
+          example:
+            engine: go
+            fallback: false
+            generated_candidates: 2000
+
+    SmartGame:
+      type: object
+      properties:
+        numbers:
+          type: array
+          items:
+            type: integer
+          example: [1, 7, 12, 33, 44]
+        strategy:
+          type: string
+          example: balanced
+        engine_weighted_score:
+          type: number
+          format: float
+          nullable: true
+          example: 86.4
+        analysis_weighted_score:
+          type: number
+          nullable: true
+        weighted_score:
+          type: integer
+          example: 86
+        classification:
+          type: string
+          example: Muito boa
+        profile:
+          type: string
+          example: Equilibrado
+        top_frequency_hits:
+          type: integer
+          example: 2
+        top_delay_hits:
+          type: integer
+          example: 1
+        reason:
+          type: string
+          example: Seleção calibrada para equilibrar frequência, atraso e estrutura.
+        historical_prize_summary:
+          $ref: '#/components/schemas/HistoricalPrizeSummary'
+
+    HistoricalPrizeSummary:
+      type: object
+      nullable: true
+      properties:
+        best_hit:
+          type: integer
+          example: 3
+        ever_prized:
+          type: boolean
+          example: false
+        total_prized_occurrences:
+          type: integer
+          example: 0
+        contest_count_checked:
+          type: integer
+          example: 1000
+        hit_counts:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            '2': 17
+            '3': 2
+        last_occurrence:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    AnalyzeRequest:
+      type: object
+      required: [numbers]
+      properties:
+        numbers:
+          type: array
+          minItems: 1
+          items:
+            type: integer
+          example: [1, 5, 12, 27, 33]
+        source:
+          type: string
+          default: manual
+          example: manual
+
+    AnalysisResult:
+      type: object
+      additionalProperties: true
+      example:
+        numbers: [1, 5, 12, 27, 33]
+        weighted_score: 78
+        classification: Boa
+        insights:
+          odd_even: equilibrado
+
+    ManualDrawRequest:
+      type: object
+      required: [contest_number, draw_date, numbers]
+      properties:
+        contest_number:
+          type: integer
+          minimum: 1
+          example: 1234
+        draw_date:
+          type: string
+          format: date
+          example: '2026-04-25'
+        numbers:
+          type: array
+          items:
+            type: integer
+          example: [1, 7, 12, 33, 44]
+        observation:
+          type: string
+          nullable: true
+          example: Cadastro manual
+
+    RegisteredBet:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 10
+        bet_contest_number:
+          type: integer
+          example: 1234
+        bet_registered_at:
+          type: string
+          format: date-time
+          example: '2026-04-25T20:15:00.000000Z'
+
+    RepeatedCombinationsRequest:
+      type: object
+      required: [modality, draws]
+      properties:
+        modality:
+          $ref: '#/components/schemas/EngineModality'
+        draws:
+          type: array
+          items:
+            $ref: '#/components/schemas/DrawForEngine'
+
+    DrawForEngine:
+      type: object
+      required: [contest_number, numbers]
+      properties:
+        contest_number:
+          type: integer
+          example: 1001
+        draw_date:
+          type: string
+          format: date
+          nullable: true
+          example: '2026-04-25'
+        numbers:
+          type: array
+          items:
+            type: integer
+          example: [1, 7, 12, 33, 44]
+
+    RepeatedCombinationsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RepeatedCombinationItem'
+        meta:
+          type: object
+          properties:
+            draw_count:
+              type: integer
+              example: 1000
+            unique_count:
+              type: integer
+              example: 999
+            repeated_count:
+              type: integer
+              example: 1
+
+    RepeatedCombinationItem:
+      type: object
+      properties:
+        numbers:
+          type: array
+          items:
+            type: integer
+          example: [1, 7, 12, 33, 44]
+        occurrences:
+          type: array
+          items:
+            $ref: '#/components/schemas/DrawForEngine'
+        occurrence_count:
+          type: integer
+          example: 2
