@@ -10,7 +10,7 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
 
-it('pode vincular uma combinação ao concurso atual', function () {
+it('vincula uma combinação ao próximo concurso disponível', function () {
     $user = User::factory()->create();
     $quina = LotteryModality::factory()->quina()->create();
 
@@ -29,10 +29,38 @@ it('pode vincular uma combinação ao concurso atual', function () {
 
     $response
         ->assertOk()
-        ->assertJsonPath('item.bet_contest_number', 6999);
+        ->assertJsonPath('item.bet_contest_number', 7000);
 
-    expect($history->fresh()->bet_contest_number)->toBe(6999)
+    expect($history->fresh()->bet_contest_number)->toBe(7000)
         ->and($history->fresh()->bet_registered_at)->not->toBeNull();
+});
+
+it('não confere aposta antes do resultado do concurso vinculado existir', function () {
+    $user = User::factory()->create();
+    $quina = LotteryModality::factory()->quina()->create();
+
+    Draw::factory()->create([
+        'lottery_modality_id' => $quina->id,
+        'contest_number' => 6999,
+    ]);
+
+    $history = CombinationHistory::factory()->forUser($user)->create([
+        'lottery_modality_id' => $quina->id,
+        'numbers' => [22, 49, 51, 56, 71],
+        'bet_contest_number' => 7000,
+        'bet_registered_at' => now(),
+    ]);
+
+    $response = $this->from('/lottery/my-bets')
+        ->actingAs($user)
+        ->get("/lottery/modalities/{$quina->id}/combination-history/{$history->id}/check-bet");
+
+    $response
+        ->assertRedirect('/lottery/my-bets')
+        ->assertSessionHas('error', 'O resultado do concurso 7000 ainda não foi sincronizado.');
+
+    expect($history->fresh()->bet_checked_at)->toBeNull()
+        ->and($history->fresh()->bet_result_snapshot)->toBeNull();
 });
 
 it('pode conferir a aposta com o resultado oficial', function () {

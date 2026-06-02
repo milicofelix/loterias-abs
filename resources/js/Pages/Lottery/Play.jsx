@@ -100,6 +100,12 @@ export default function Play({ modality, prefilledNumbers = [] }) {
         title: 'Gerando jogos inteligentes...',
         description: 'Analisando estatísticas, atrasos e padrões históricos.',
     });
+    const [actionLoading, setActionLoading] = useState(false);
+    const [actionFinishSignal, setActionFinishSignal] = useState(0);
+    const [actionLoadingText, setActionLoadingText] = useState({
+        title: 'Processando combinação...',
+        description: 'Aplicando sua seleção.',
+    });
 
     const maxNumbers = Math.min(
         modality?.bet_max_count || 5,
@@ -172,6 +178,38 @@ export default function Play({ modality, prefilledNumbers = [] }) {
 
     async function handleAnalyzeManual() {
         await analyzeNumbers(parsedManualNumbers, 'manual');
+    }
+
+    function handleUseSmartGame(gameNumbers) {
+        setActionLoadingText({
+            title: 'Aplicando combinação...',
+            description: 'Preenchendo a seleção manual com os números escolhidos.',
+        });
+        setActionLoading(true);
+
+        window.setTimeout(() => {
+            setNumbers(gameNumbers);
+            setSelectedNumbers(gameNumbers);
+            setManualNumbers(gameNumbers.join(', '));
+            setCount(gameNumbers.length);
+            setActionLoading(false);
+            setActionFinishSignal(Date.now());
+        }, 450);
+    }
+
+    async function handleAnalyzeSmartGame(gameNumbers) {
+        setActionLoadingText({
+            title: 'Analisando combinação...',
+            description: 'Cruzando os números escolhidos com estatísticas e histórico.',
+        });
+        setActionLoading(true);
+
+        try {
+            await analyzeNumbers(gameNumbers, 'generated');
+        } finally {
+            setActionLoading(false);
+            setActionFinishSignal(Date.now());
+        }
     }
 
     const handleGenerateSmart = async () => {
@@ -339,10 +377,10 @@ export default function Play({ modality, prefilledNumbers = [] }) {
     return (
         <>
             <AppPreloader
-                visible={smartLoading}
-                finishSignal={smartFinishSignal}
-                title={smartLoadingText.title}
-                description={smartLoadingText.description}
+                visible={smartLoading || actionLoading}
+                finishSignal={smartLoading ? smartFinishSignal : actionFinishSignal}
+                title={smartLoading ? smartLoadingText.title : actionLoadingText.title}
+                description={smartLoading ? smartLoadingText.description : actionLoadingText.description}
             />
 
             <LotteryPage>
@@ -711,30 +749,27 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                                         </div>
 
                                         <div className="mt-4 flex flex-wrap gap-2">
-                                            <button
-                                                className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border px-4 font-semibold"
-                                                style={{
-                                                    borderColor: lotteryPalette.line,
-                                                    backgroundColor: '#fff',
-                                                    color: lotteryPalette.blue,
-                                                }}
-                                                onClick={() => {
-                                                    setNumbers(game.numbers);
-                                                    setSelectedNumbers(game.numbers);
-                                                    setManualNumbers(game.numbers.join(', '));
-                                                    setCount(game.numbers.length);
-                                                }}
-                                            >
-                                                Usar esta combinação
-                                            </button>
+	                                            <button
+	                                                className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border px-4 font-semibold"
+	                                                style={{
+	                                                    borderColor: lotteryPalette.line,
+	                                                    backgroundColor: '#fff',
+	                                                    color: lotteryPalette.blue,
+	                                                }}
+                                                    disabled={actionLoading || smartLoading}
+	                                                onClick={() => handleUseSmartGame(game.numbers)}
+	                                            >
+	                                                Usar esta combinação
+	                                            </button>
 
-                                            <button
-                                                className="inline-flex min-h-[46px] items-center justify-center rounded-2xl px-4 font-semibold text-white"
-                                                style={{ background: 'linear-gradient(180deg, #1670b6 0%, #0c5a96 100%)' }}
-                                                onClick={() => analyzeNumbers(game.numbers, 'generated')}
-                                            >
-                                                Analisar agora
-                                            </button>
+	                                            <button
+	                                                className="inline-flex min-h-[46px] items-center justify-center rounded-2xl px-4 font-semibold text-white"
+	                                                style={{ background: 'linear-gradient(180deg, #1670b6 0%, #0c5a96 100%)' }}
+                                                    disabled={actionLoading || smartLoading}
+	                                                onClick={() => handleAnalyzeSmartGame(game.numbers)}
+	                                            >
+	                                                Analisar agora
+	                                            </button>
                                         </div>
                                     </div>
                                 ))}

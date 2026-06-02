@@ -10,7 +10,7 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
 
-it('pode vincular uma combinação ao concurso atual', function () {
+it('vincula uma combinação ao próximo concurso disponível', function () {
     $user = User::factory()->create();
     $quina = LotteryModality::factory()->quina()->create();
 
@@ -29,9 +29,9 @@ it('pode vincular uma combinação ao concurso atual', function () {
 
     $response
         ->assertOk()
-        ->assertJsonPath('item.bet_contest_number', 6999);
+        ->assertJsonPath('item.bet_contest_number', 7000);
 
-    expect($history->fresh()->bet_contest_number)->toBe(6999)
+    expect($history->fresh()->bet_contest_number)->toBe(7000)
         ->and($history->fresh()->bet_registered_at)->not->toBeNull();
 });
 

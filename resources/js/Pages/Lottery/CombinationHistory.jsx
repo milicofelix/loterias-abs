@@ -130,15 +130,22 @@ export default function CombinationHistory({ modality, items, filters = {} }) {
                                                 Reanalisar
                                             </button>
 
-                                            {item.bet_contest_number ? (
-                                                <Link
-                                                    href={`/lottery/modalities/${modality.id}/combination-history/${item.id}/check-bet`}
-                                                    className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border px-4 font-semibold"
-                                                    style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff', color: lotteryPalette.blue }}
-                                                >
-                                                    Conferir aposta
-                                                </Link>
-                                            ) : (
+	                                            {item.bet_contest_number && item.bet_result_available ? (
+	                                                <Link
+	                                                    href={`/lottery/modalities/${modality.id}/combination-history/${item.id}/check-bet`}
+	                                                    className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border px-4 font-semibold"
+	                                                    style={{ borderColor: lotteryPalette.line, backgroundColor: '#fff', color: lotteryPalette.blue }}
+	                                                >
+	                                                    Conferir aposta
+	                                                </Link>
+                                                ) : item.bet_contest_number ? (
+                                                    <div
+                                                        className="inline-flex min-h-[46px] items-center justify-center rounded-2xl border px-4 font-semibold"
+                                                        style={{ borderColor: '#f5d78e', backgroundColor: '#fff9e8', color: '#8a6500' }}
+                                                    >
+                                                        Aguardando resultado
+                                                    </div>
+	                                            ) : (
                                                 <button
                                                     type="button"
                                                     onClick={async () => {

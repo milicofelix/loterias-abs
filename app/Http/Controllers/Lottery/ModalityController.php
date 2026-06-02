@@ -815,6 +815,10 @@ class ModalityController extends Controller
                     'analysis_snapshot' => $item->analysis_snapshot,
                     'bet_contest_number' => $item->bet_contest_number,
                     'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
+                    'bet_checked_at' => $item->bet_checked_at?->format('d/m/Y H:i'),
+                    'bet_result_snapshot' => $item->bet_result_snapshot,
+                    'bet_status' => $this->betStatus($item),
+                    'bet_result_available' => $this->betResultAvailable($item),
                     'created_at' => $item->created_at?->format('d/m/Y H:i'),
                 ];
             })
@@ -857,8 +861,10 @@ class ModalityController extends Controller
 
         $item->forceFill([
             'user_id' => $request->user()->id,
-            'bet_contest_number' => $latestDraw->contest_number,
+            'bet_contest_number' => ((int) $latestDraw->contest_number) + 1,
             'bet_registered_at' => now(),
+            'bet_result_snapshot' => null,
+            'bet_checked_at' => null,
         ])->save();
 
         return response()->json([
@@ -887,7 +893,13 @@ class ModalityController extends Controller
         $draw = $modality->draws()
             ->with('numbers')
             ->where('contest_number', $item->bet_contest_number)
-            ->firstOrFail();
+            ->first();
+
+        if (! $draw) {
+            return redirect()
+                ->back()
+                ->with('error', "O resultado do concurso {$item->bet_contest_number} ainda não foi sincronizado.");
+        }
 
         $drawNumbers = $draw->numbers->pluck('number')->map(fn ($value) => (int) $value)->sort()->values()->all();
         $userNumbers = collect($item->numbers)->map(fn ($value) => (int) $value)->sort()->values()->all();
@@ -919,6 +931,7 @@ class ModalityController extends Controller
                 'numbers' => $userNumbers,
                 'bet_contest_number' => $item->bet_contest_number,
                 'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
+                'bet_checked_at' => $item->bet_checked_at?->format('d/m/Y H:i'),
             ],
             'officialResult' => $officialResult,
             'checkResult' => $checkResult,
@@ -928,18 +941,24 @@ class ModalityController extends Controller
     public function bets(Request $request, LotteryModality $modality)
     {
         $days = (int) $request->integer('days', 30);
+        $status = $this->normalizeBetStatusFilter($request->string('status')->toString());
 
         if (! in_array($days, [7, 15, 30, 60, 90], true)) {
             $days = 30;
         }
 
-        $items = \App\Models\CombinationHistory::query()
+        $query = \App\Models\CombinationHistory::query()
             ->where('lottery_modality_id', $modality->id)
             ->where('user_id', auth()->id())
             ->whereNotNull('bet_registered_at')
-            ->where('bet_registered_at', '>=', now()->subDays($days))
+            ->where('bet_registered_at', '>=', now()->subDays($days));
+
+        $summary = $this->betSummary((clone $query));
+
+        $items = $this->applyBetStatusFilter($query, $status)
             ->latest('bet_registered_at')
             ->paginate(10)
+            ->through(fn ($item) => $this->betPayload($item))
             ->withQueryString();
 
         return Inertia::render('Lottery/MyBets', [
@@ -947,8 +966,11 @@ class ModalityController extends Controller
             'items' => $items,
             'filters' => [
                 'days' => $days,
+                'status' => $status,
             ],
             'dayOptions' => [7, 15, 30, 60, 90],
+            'statusOptions' => $this->betStatusOptions(),
+            'summary' => $summary,
         ]);
     }
 
@@ -961,41 +983,135 @@ class ModalityController extends Controller
         }
 
         $days = (int) $request->integer('days', 30);
+        $status = $this->normalizeBetStatusFilter($request->string('status')->toString());
         $allowedDays = [7, 15, 30, 60, 90];
         if (! in_array($days, $allowedDays, true)) {
             $days = 30;
         }
 
-        $items = \App\Models\CombinationHistory::query()
+        $query = \App\Models\CombinationHistory::query()
             ->with('modality')
             ->where('user_id', $user->id)
             ->whereNotNull('bet_registered_at')
-            ->where('bet_registered_at', '>=', now()->subDays($days)->startOfDay())
+            ->where('bet_registered_at', '>=', now()->subDays($days)->startOfDay());
+
+        $summary = $this->betSummary((clone $query));
+
+        $items = $this->applyBetStatusFilter($query, $status)
             ->latest('bet_registered_at')
             ->paginate(10)
-            ->through(function ($item) {
-                return [
-                    'id' => $item->id,
-                    'modality' => [
-                        'id' => $item->modality?->id,
-                        'name' => $item->modality?->name,
-                        'code' => $item->modality?->code,
-                    ],
-                    'numbers' => $item->numbers,
-                    'source' => $item->source,
-                    'bet_contest_number' => $item->bet_contest_number,
-                    'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
-                ];
-            })
+            ->through(fn ($item) => $this->betPayload($item))
             ->withQueryString();
 
         return inertia('Lottery/MyBets', [
             'items' => $items,
             'filters' => [
                 'days' => $days,
+                'status' => $status,
             ],
             'dayOptions' => $allowedDays,
+            'statusOptions' => $this->betStatusOptions(),
+            'summary' => $summary,
         ]);
+    }
+
+    protected function betPayload(\App\Models\CombinationHistory $item): array
+    {
+        return [
+            'id' => $item->id,
+            'modality' => [
+                'id' => $item->modality?->id,
+                'name' => $item->modality?->name,
+                'code' => $item->modality?->code,
+            ],
+            'numbers' => $item->numbers,
+            'source' => $item->source,
+            'bet_contest_number' => $item->bet_contest_number,
+            'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
+            'bet_checked_at' => $item->bet_checked_at?->format('d/m/Y H:i'),
+            'bet_result_snapshot' => $item->bet_result_snapshot,
+            'bet_status' => $this->betStatus($item),
+            'bet_result_available' => $this->betResultAvailable($item),
+        ];
+    }
+
+    protected function betStatus(\App\Models\CombinationHistory $item): string
+    {
+        if (! $item->bet_checked_at) {
+            return 'pending';
+        }
+
+        return data_get($item->bet_result_snapshot, 'check_result.is_prized')
+            ? 'prized'
+            : 'not_prized';
+    }
+
+    protected function betResultAvailable(\App\Models\CombinationHistory $item): bool
+    {
+        if (! $item->bet_contest_number) {
+            return false;
+        }
+
+        return \App\Models\Draw::query()
+            ->where('lottery_modality_id', $item->lottery_modality_id)
+            ->where('contest_number', $item->bet_contest_number)
+            ->exists();
+    }
+
+    protected function betStatusOptions(): array
+    {
+        return [
+            ['value' => '', 'label' => 'Todas'],
+            ['value' => 'pending', 'label' => 'Pendentes'],
+            ['value' => 'checked', 'label' => 'Conferidas'],
+            ['value' => 'prized', 'label' => 'Premiadas'],
+            ['value' => 'not_prized', 'label' => 'Não premiadas'],
+        ];
+    }
+
+    protected function normalizeBetStatusFilter(string $status): string
+    {
+        return in_array($status, ['pending', 'checked', 'prized', 'not_prized'], true) ? $status : '';
+    }
+
+    protected function applyBetStatusFilter($query, string $status)
+    {
+        return match ($status) {
+            'pending' => $query->whereNull('bet_checked_at'),
+            'checked' => $query->whereNotNull('bet_checked_at'),
+            'prized' => $query
+                ->whereNotNull('bet_checked_at')
+                ->where('bet_result_snapshot->check_result->is_prized', true),
+            'not_prized' => $query
+                ->whereNotNull('bet_checked_at')
+                ->where(function ($query) {
+                    $query
+                        ->where('bet_result_snapshot->check_result->is_prized', false)
+                        ->orWhereNull('bet_result_snapshot->check_result->is_prized');
+                }),
+            default => $query,
+        };
+    }
+
+    protected function betSummary($query): array
+    {
+        return [
+            'total' => (clone $query)->count(),
+            'pending' => (clone $query)->whereNull('bet_checked_at')->count(),
+            'checked' => (clone $query)->whereNotNull('bet_checked_at')->count(),
+            'prized' => (clone $query)
+                ->whereNotNull('bet_checked_at')
+                ->where('bet_result_snapshot->check_result->is_prized', true)
+                ->count(),
+            'not_prized' => (clone $query)
+                ->whereNotNull('bet_checked_at')
+                ->where(function ($query) {
+                    $query
+                        ->where('bet_result_snapshot->check_result->is_prized', false)
+                        ->orWhereNull('bet_result_snapshot->check_result->is_prized');
+                })
+                ->count(),
+        ];
     }
 
     public function destroyCombinationHistory(
