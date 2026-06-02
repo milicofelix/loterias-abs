@@ -145,8 +145,9 @@ class CaixaSpreadsheetImporter
         $value = trim($value);
         $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
         $ascii = $ascii !== false ? $ascii : $value;
+        $ascii = preg_replace('/[^A-Za-z0-9]+/', '', $ascii) ?? $ascii;
 
-        return strtoupper(preg_replace('/\s+/', '', $ascii) ?? $ascii);
+        return strtoupper($ascii);
     }
 
     /**

@@ -1,5 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
-import LotteryLogo from '../Lottery/components/LotteryLogo';
+import LotteryLogo from '@/Components/LotteryLogo';
 
 export default function Login({ status, canResetPassword = false }) {
     const { data, setData, post, processing, errors } = useForm({

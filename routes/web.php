@@ -6,13 +6,11 @@ use App\Http\Controllers\Lottery\ModalityController;
 use App\Http\Controllers\Lottery\GameController;
 use App\Http\Controllers\Lottery\RepeatedCombinationController;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::redirect('/', '/login');
 
-Route::get('/dashboard', function () {
-    return view('dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+Route::redirect('/dashboard', '/lottery/modalities')
+    ->middleware(['auth', 'verified'])
+    ->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

@@ -10,13 +10,13 @@ import {
     SurfaceCard,
     Tag,
     lotteryPalette,
-} from './components/LotteryUi';
+} from '../../components/LotteryUi';
 import {
     getHistoryPrizeEmptyText,
     getPlayInstruction,
     getPrizeHits,
     supportsSmartGeneration,
-} from './components/modalityRules';
+} from '../../components/modalityRules';
 import AppPreloader from '@/Components/AppPreloader';
 
 function InfoRow({ label, value }) {

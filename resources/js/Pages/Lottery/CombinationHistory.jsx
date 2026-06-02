@@ -10,9 +10,10 @@ import {
     SurfaceCard,
     Tag,
     lotteryPalette,
-} from './components/LotteryUi';
+} from '../../components/LotteryUi';
 
 export default function CombinationHistory({ modality, items, filters = {} }) {
+
     const applySourceFilter = (source) => {
         router.get(
             `/lottery/modalities/${modality.id}/combination-history`,

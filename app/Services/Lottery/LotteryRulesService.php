@@ -77,9 +77,28 @@ class LotteryRulesService
     public function caixaSheetCandidates(LotteryModality $modality): array
     {
         return match ($modality->code) {
-            'lotofacil' => ['LOTOFACIL', 'LOTO FÁCIL', 'LOTO FACIL', 'LOTOFÁCIL'],
-            'quina' => ['QUINA'],
-            default => [mb_strtoupper($modality->name, 'UTF-8')],
+            'lotofacil' => [
+                'LOTOFACIL',
+                'LOTO FÁCIL',
+                'LOTO FACIL',
+                'LOTOFÁCIL',
+            ],
+
+            'quina' => [
+                'QUINA',
+            ],
+
+            'mega_sena' => [
+                'MEGA SENA',
+                'MEGA-SENA',
+                'MEGASENA',
+                'MEGA_SENA',
+            ],
+
+            default => [
+                mb_strtoupper($modality->name, 'UTF-8'),
+                mb_strtoupper((string) $modality->code, 'UTF-8'),
+            ],
         };
     }
 

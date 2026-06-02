@@ -7,7 +7,7 @@ import {
     SurfaceCard,
     MetricCard,
     lotteryPalette,
-} from './components/LotteryUi';
+} from '../../components/LotteryUi';
 
 export default function RepeatedCombinations({ modality, items = [], meta = null }) {
     return (

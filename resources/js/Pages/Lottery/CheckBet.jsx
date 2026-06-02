@@ -7,7 +7,7 @@ import {
     SectionHeading,
     SurfaceCard,
     lotteryPalette,
-} from './components/LotteryUi';
+} from '../../components/LotteryUi';
 
 export default function CheckBet({ modality, historyItem, officialResult, checkResult }) {
     const hits = checkResult?.hits || [];
