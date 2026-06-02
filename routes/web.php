@@ -58,6 +58,9 @@ Route::prefix('lottery')->group(function () {
         Route::post('/modalities/{modality}/sync-results', [ModalityController::class, 'syncResults'])
             ->name('lottery.modalities.sync-results');
 
+        Route::get('/modalities/{modality}/sync-results/{syncId}', [ModalityController::class, 'syncResultsStatus'])
+            ->name('lottery.modalities.sync-results.status');
+
         Route::delete('/modalities/{modality}/combination-history/{item}', [ModalityController::class, 'destroyCombinationHistory'])
             ->name('lottery.combination-history.destroy');
 

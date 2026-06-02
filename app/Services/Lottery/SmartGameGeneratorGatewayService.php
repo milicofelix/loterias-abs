@@ -8,9 +8,13 @@ use InvalidArgumentException;
 class SmartGameGeneratorGatewayService
 {
     protected LotteryEngineClient $client;
+
     protected StatisticsService $statisticsService;
+
     protected DelayAnalysisService $delayAnalysisService;
+
     protected HistoricalProfileComparisonService $historicalProfileComparisonService;
+
     protected LotteryRulesService $rulesService;
 
     public function __construct(
@@ -34,6 +38,7 @@ class SmartGameGeneratorGatewayService
     {
         $strategy = (string) ($options['strategy'] ?? 'balanced');
         $games = (int) ($options['games'] ?? 5);
+        $count = (int) ($options['count'] ?? $modality->bet_min_count);
         $modalityCode = str_replace('-', '_', strtolower(trim((string) $modality->code)));
         $candidatePool = (int) ($options['candidate_pool'] ?? match ($modalityCode) {
             'lotofacil' => 4000,
@@ -43,7 +48,7 @@ class SmartGameGeneratorGatewayService
         });
         $minScore = (int) ($options['min_score'] ?? 0);
 
-        $this->validateOptions($modality, $strategy, $games, $candidatePool, $minScore);
+        $this->validateOptions($modality, $strategy, $games, $candidatePool, $minScore, $count);
 
         $frequencies = $this->statisticsService->numberFrequencies($modality);
         $delays = $this->delayAnalysisService->numberDelays($modality);
@@ -52,7 +57,7 @@ class SmartGameGeneratorGatewayService
             $modality,
             range(
                 (int) $modality->min_number,
-                (int) $modality->min_number + (int) $modality->draw_count - 1
+                (int) $modality->min_number + $count - 1
             )
         );
 
@@ -60,6 +65,7 @@ class SmartGameGeneratorGatewayService
             'sum' => 0,
             'range' => 0,
         ];
+        $historicalAverages['sum'] = (float) ($historicalAverages['sum'] ?? 0) * ($count / max(1, (int) $modality->draw_count));
 
         $payload = [
             'modality' => [
@@ -67,9 +73,12 @@ class SmartGameGeneratorGatewayService
                 'min_number' => (int) $modality->min_number,
                 'max_number' => (int) $modality->max_number,
                 'draw_count' => (int) $modality->draw_count,
+                'bet_min_count' => (int) $modality->bet_min_count,
+                'bet_max_count' => (int) $modality->bet_max_count,
             ],
             'strategy' => $strategy,
             'games' => $games,
+            'count' => $count,
             'candidate_pool' => $candidatePool,
             'min_score' => $minScore,
             'stats' => [
@@ -105,7 +114,8 @@ class SmartGameGeneratorGatewayService
         string $strategy,
         int $games,
         int $candidatePool,
-        int $minScore
+        int $minScore,
+        int $count
     ): void {
         if (! $this->rulesService->usesExternalSmartEngine($modality)) {
             throw new InvalidArgumentException("A engine externa não está habilitada para {$modality->name}.");
@@ -125,6 +135,10 @@ class SmartGameGeneratorGatewayService
 
         if ($minScore < 0 || $minScore > 100) {
             throw new InvalidArgumentException('O score mínimo deve estar entre 0 e 100.');
+        }
+
+        if ($count < (int) $modality->bet_min_count || $count > (int) $modality->bet_max_count) {
+            throw new InvalidArgumentException("A quantidade de números deve estar entre {$modality->bet_min_count} e {$modality->bet_max_count}.");
         }
     }
 }

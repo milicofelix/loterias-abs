@@ -13,8 +13,7 @@ class CaixaResultsSyncService
         protected CaixaResultsDownloaderService $downloader,
         protected CaixaSpreadsheetImporter $spreadsheetImporter,
         protected LotteryRulesService $rulesService,
-    ) {
-    }
+    ) {}
 
     public function sync(LotteryModality $modality): array
     {
@@ -23,9 +22,12 @@ class CaixaResultsSyncService
         }
 
         $filePath = $this->downloader->downloadSpreadsheet($modality->name);
+        $nextContestNumber = ((int) $modality->draws()->max('contest_number')) + 1;
 
         try {
-            $result = $this->spreadsheetImporter->import($filePath, $modality);
+            $result = $this->spreadsheetImporter->import($filePath, $modality, [
+                'min_contest_number' => $nextContestNumber,
+            ]);
         } finally {
             if (is_string($filePath) && file_exists($filePath)) {
                 @unlink($filePath);

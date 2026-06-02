@@ -208,6 +208,7 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                 {
                     strategy: smartStrategy,
                     games: smartGamesCount,
+                    count,
                     min_score: Number(smartMinScore) || 0,
                 }
             );
@@ -386,6 +387,23 @@ export default function Play({ modality, prefilledNumbers = [] }) {
 
                                     {canUseSmartGeneration ? (
                                         <>
+                                            <label
+                                                className="mt-4 block text-sm font-semibold"
+                                                style={{ color: lotteryPalette.muted }}
+                                            >
+                                                Quantidade de números
+                                            </label>
+
+                                            <input
+                                                type="number"
+                                                min={modality.bet_min_count}
+                                                max={modality.bet_max_count}
+                                                value={count}
+                                                onChange={(e) => setCount(Number(e.target.value))}
+                                                className="mt-2 w-full rounded-2xl border bg-white px-4 py-3"
+                                                style={{ borderColor: lotteryPalette.line }}
+                                            />
+
                                             <div className="mt-4 flex flex-wrap gap-2">
                                                 {[
                                                     { value: 'balanced', label: 'Equilibrado' },

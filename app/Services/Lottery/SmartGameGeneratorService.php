@@ -14,8 +14,7 @@ class SmartGameGeneratorService
         protected DelayAnalysisService $delayAnalysisService,
         protected HistoricalProfileComparisonService $historicalProfileComparisonService,
         protected ProfileComparisonAgentService $profileComparisonAgentService,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array<int, array<string, mixed>>
@@ -24,20 +23,22 @@ class SmartGameGeneratorService
     {
         $strategy = (string) ($options['strategy'] ?? 'balanced');
         $games = (int) ($options['games'] ?? 5);
+        $count = (int) ($options['count'] ?? $modality->bet_min_count);
         // $candidatePool = (int) ($options['candidate_pool'] ?? 180);
         // $targetValidCandidates = max($games * 4, 12);
         // $attemptLimit = $candidatePool;
         // $attempts = 0;
         $candidatePool = (int) ($options['candidate_pool'] ?? 140);
 
-        $this->validateOptions($modality, $strategy, $games, $candidatePool);
+        $this->validateOptions($modality, $strategy, $games, $candidatePool, $count);
 
         $frequencies = $this->statisticsService->numberFrequencies($modality);
         $delays = $this->delayAnalysisService->numberDelays($modality);
         $historicalReference = $this->historicalProfileComparisonService->compare(
             $modality,
-            range($modality->min_number, $modality->min_number + $modality->draw_count - 1)
+            range($modality->min_number, $modality->min_number + $count - 1)
         )['historical_averages'] ?? ['sum' => 0.0, 'range' => 0.0];
+        $historicalReference['sum'] = (float) ($historicalReference['sum'] ?? 0) * ($count / max(1, (int) $modality->draw_count));
         $topFrequentNumbers = collect($frequencies)
             ->sortDesc()
             ->keys()
@@ -63,7 +64,7 @@ class SmartGameGeneratorService
 
         while (count($candidates) < $targetValidCandidates && $attempts < $attemptLimit) {
             $attempts++;
-            $numbers = $this->generateCandidateNumbers($modality, $strategy, $frequencies, $delays);
+            $numbers = $this->generateCandidateNumbers($modality, $strategy, $frequencies, $delays, $count);
             sort($numbers);
 
             $key = implode('-', $numbers);
@@ -108,7 +109,8 @@ class SmartGameGeneratorService
         LotteryModality $modality,
         string $strategy,
         int $games,
-        int $candidatePool
+        int $candidatePool,
+        int $count
     ): void {
         if (! in_array($strategy, ['balanced', 'hot'], true)) {
             throw new InvalidArgumentException('Estratégia inválida. Utilize balanced ou hot.');
@@ -121,20 +123,25 @@ class SmartGameGeneratorService
         if ($candidatePool < 40 || $candidatePool > 2000) {
             throw new InvalidArgumentException('O volume de candidatos deve estar entre 40 e 2000.');
         }
+
+        if ($count < (int) $modality->bet_min_count || $count > (int) $modality->bet_max_count) {
+            throw new InvalidArgumentException("A quantidade de números deve estar entre {$modality->bet_min_count} e {$modality->bet_max_count}.");
+        }
     }
 
     /**
-     * @param array<int, int> $frequencies
-     * @param array<int, int> $delays
+     * @param  array<int, int>  $frequencies
+     * @param  array<int, int>  $delays
      * @return array<int, int>
      */
     protected function generateCandidateNumbers(
         LotteryModality $modality,
         string $strategy,
         array $frequencies,
-        array $delays
+        array $delays,
+        int $count
     ): array {
-        $drawCount = (int) $modality->draw_count;
+        $drawCount = $count;
 
         $hotTake = max($drawCount + 4, (int) ceil($drawCount * 1.8));
         $warmTake = max($drawCount + 8, (int) ceil($drawCount * 2.5));
@@ -192,7 +199,6 @@ class SmartGameGeneratorService
         ], $drawCount, $modality);
     }
 
-
     /**
      * @return array{0:int,1:int}
      */
@@ -222,7 +228,7 @@ class SmartGameGeneratorService
     }
 
     /**
-     * @param array<int, array{pool: array<int, int>, count: int}> $buckets
+     * @param  array<int, array{pool: array<int, int>, count: int}>  $buckets
      * @return array<int, int>
      */
     protected function pickUniqueNumbers(array $buckets, int $targetCount, LotteryModality $modality): array
@@ -264,8 +270,8 @@ class SmartGameGeneratorService
     }
 
     /**
-     * @param array<int, int> $numbers
-     * @param array<string, float> $historicalReference
+     * @param  array<int, int>  $numbers
+     * @param  array<string, float>  $historicalReference
      */
     protected function passesQuickFilters(LotteryModality $modality, array $numbers, array $historicalReference): bool
     {
@@ -276,7 +282,7 @@ class SmartGameGeneratorService
         $distribution = array_values($pattern['range_distribution']);
         $maxBucket = $distribution !== [] ? max($distribution) : 0;
 
-        $drawCount = (int) $modality->draw_count;
+        $drawCount = count($numbers);
         $minEven = max(1, (int) floor($drawCount * 0.20));
         $maxEven = min($drawCount - 1, (int) ceil($drawCount * 0.80));
 
@@ -323,11 +329,11 @@ class SmartGameGeneratorService
     }
 
     /**
-     * @param array<int, int> $numbers
-     * @param array<int, int> $frequencies
-     * @param array<int, int> $delays
-     * @param array<int, int> $topFrequentNumbers
-     * @param array<int, int> $topDelayedNumbers
+     * @param  array<int, int>  $numbers
+     * @param  array<int, int>  $frequencies
+     * @param  array<int, int>  $delays
+     * @param  array<int, int>  $topFrequentNumbers
+     * @param  array<int, int>  $topDelayedNumbers
      * @return array<string, mixed>
      */
     protected function buildLightCandidatePayload(
@@ -413,7 +419,7 @@ class SmartGameGeneratorService
     }
 
     /**
-     * @param array<string, mixed> $candidate
+     * @param  array<string, mixed>  $candidate
      * @return array<string, mixed>
      */
     protected function enrichCandidatePayload(LotteryModality $modality, array $candidate): array
@@ -459,7 +465,7 @@ class SmartGameGeneratorService
     }
 
     /**
-     * @param array<string, mixed> $pattern
+     * @param  array<string, mixed>  $pattern
      */
     protected function calculatePatternQuality(array $pattern): int
     {
@@ -503,7 +509,7 @@ class SmartGameGeneratorService
     }
 
     /**
-     * @param array<string, mixed> $pattern
+     * @param  array<string, mixed>  $pattern
      */
     protected function inferProfile(string $strategy, int $topFrequencyHits, int $topDelayHits, array $pattern): string
     {

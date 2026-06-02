@@ -3,6 +3,7 @@
 use App\Models\LotteryModality;
 use App\Models\User;
 use App\Services\Lottery\CaixaResultsSyncService;
+use App\Services\Lottery\LotterySyncStatusStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -50,11 +51,59 @@ it('returns a friendly error when sync fails', function () {
         ->assertSessionHas('error', 'A sincronização automática pela CAIXA está disponível apenas para a Quina nesta etapa.');
 });
 
-
 it('redirects guests to login when trying to sync caixa results', function () {
     $modality = LotteryModality::factory()->quina()->create();
 
     $response = $this->post("/lottery/modalities/{$modality->id}/sync-results");
 
     $response->assertRedirect(route('login'));
+});
+
+it('starts an async caixa sync when json is requested', function () {
+    $this->actingAs(User::factory()->create());
+
+    $modality = LotteryModality::factory()->quina()->create();
+
+    $service = Mockery::mock(CaixaResultsSyncService::class);
+    $service->shouldReceive('sync')
+        ->zeroOrMoreTimes()
+        ->andReturn([
+            'imported' => 1,
+            'existing' => 0,
+            'skipped' => 0,
+        ]);
+
+    $this->app->instance(CaixaResultsSyncService::class, $service);
+
+    $response = $this->postJson("/lottery/modalities/{$modality->id}/sync-results");
+
+    $response->assertAccepted()
+        ->assertJsonStructure([
+            'sync' => [
+                'id',
+                'status',
+                'message',
+                'modality_id',
+                'user_id',
+            ],
+        ])
+        ->assertJsonPath('sync.status', 'queued');
+});
+
+it('returns async caixa sync status only for the owner', function () {
+    $user = User::factory()->create();
+    $otherUser = User::factory()->create();
+    $modality = LotteryModality::factory()->quina()->create();
+    $store = app(LotterySyncStatusStore::class);
+
+    $syncId = $store->create($modality, $user->id);
+
+    $this->actingAs($user)
+        ->getJson("/lottery/modalities/{$modality->id}/sync-results/{$syncId}")
+        ->assertOk()
+        ->assertJsonPath('sync.id', $syncId);
+
+    $this->actingAs($otherUser)
+        ->getJson("/lottery/modalities/{$modality->id}/sync-results/{$syncId}")
+        ->assertNotFound();
 });

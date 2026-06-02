@@ -11,7 +11,7 @@ uses(RefreshDatabase::class);
 
 function makeQuinaSpreadsheet(array $rows, string $sheetName = 'QUINA'): string
 {
-    $spreadsheet = new Spreadsheet();
+    $spreadsheet = new Spreadsheet;
     $sheet = $spreadsheet->getActiveSheet();
     $sheet->setTitle($sheetName);
 
@@ -43,13 +43,13 @@ function makeQuinaSpreadsheet(array $rows, string $sheetName = 'QUINA'): string
 
     $rowNumber = 2;
     foreach ($rows as $row) {
-        $sheet->fromArray($row, null, 'A' . $rowNumber);
+        $sheet->fromArray($row, null, 'A'.$rowNumber);
         $rowNumber++;
     }
 
-    $path = storage_path('app/testing/quina-import-' . uniqid() . '.xlsx');
+    $path = storage_path('app/testing/quina-import-'.uniqid().'.xlsx');
 
-    if (!is_dir(dirname($path))) {
+    if (! is_dir(dirname($path))) {
         mkdir(dirname($path), 0777, true);
     }
 
@@ -121,6 +121,24 @@ it('importa apenas novos desenhos e ignora os existentes.', function () {
         ->and(($draw->metadata['observação'] ?? null))->toBeNull();
 });
 
+it('pode pular concursos abaixo do mínimo incremental informado', function () {
+    $quina = LotteryModality::factory()->quina()->create();
+
+    $path = makeQuinaSpreadsheet([
+        [1, '13/03/1994', 1, 2, 3, 4, 5, 0, null, null, 0, null, 0, null, 0, null, null, null, null, null, null],
+        [2, '17/03/1994', 6, 7, 8, 9, 10, 0, null, null, 0, null, 0, null, 0, null, null, null, null, null, null],
+        [3, '20/03/1994', 11, 12, 13, 14, 15, 0, null, null, 0, null, 0, null, 0, null, null, null, null, null, null],
+    ]);
+
+    $result = app(QuinaSpreadsheetImporter::class)->import($path, $quina, [
+        'min_contest_number' => 3,
+    ]);
+
+    expect($result['imported'])->toBe(1)
+        ->and($result['existing'])->toBe(2)
+        ->and(Draw::query()->where('lottery_modality_id', $quina->id)->pluck('contest_number')->all())->toBe([3]);
+});
+
 it('ignores empty rows', function () {
     $quina = LotteryModality::factory()->quina()->create();
 
@@ -146,14 +164,14 @@ it('fails when sheet QUINA does not exist', function () {
 it('fails when required columns are missing', function () {
     $quina = LotteryModality::factory()->quina()->create();
 
-    $spreadsheet = new Spreadsheet();
+    $spreadsheet = new Spreadsheet;
     $sheet = $spreadsheet->getActiveSheet();
     $sheet->setTitle('QUINA');
     $sheet->fromArray(['Concurso', 'Data Sorteio', 'Bola1'], null, 'A1');
 
-    $path = storage_path('app/testing/quina-invalid-' . uniqid() . '.xlsx');
+    $path = storage_path('app/testing/quina-invalid-'.uniqid().'.xlsx');
 
-    if (!is_dir(dirname($path))) {
+    if (! is_dir(dirname($path))) {
         mkdir(dirname($path), 0777, true);
     }
 

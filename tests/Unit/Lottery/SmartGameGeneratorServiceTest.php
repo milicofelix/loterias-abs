@@ -111,3 +111,23 @@ it('não retorna jogos duplicados na mesma execução', function () {
 
     expect($keys)->toHaveCount(count(array_unique($keys)));
 });
+
+it('gera jogos inteligentes com quantidade acima do mínimo da modalidade', function () {
+    $quina = LotteryModality::factory()->quina()->create();
+    seedQuinaHistory($quina);
+
+    $games = app(SmartGameGeneratorService::class)->generate($quina, [
+        'strategy' => 'balanced',
+        'games' => 3,
+        'count' => 7,
+        'candidate_pool' => 500,
+    ]);
+
+    expect($games)->toHaveCount(3);
+
+    foreach ($games as $game) {
+        expect($game['numbers'])->toHaveCount(7)
+            ->and($game['numbers'])->toBe(array_values(array_unique($game['numbers'])))
+            ->and($game['numbers'])->toBeSorted();
+    }
+});

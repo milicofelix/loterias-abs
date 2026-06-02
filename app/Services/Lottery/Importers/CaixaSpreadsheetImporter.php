@@ -17,10 +17,12 @@ class CaixaSpreadsheetImporter
 {
     public function __construct(
         protected LotteryRulesService $rulesService,
-    ) {
-    }
+    ) {}
 
-    public function import(string $filePath, LotteryModality $modality): array
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function import(string $filePath, LotteryModality $modality, array $options = []): array
     {
         if (! $this->rulesService->supportsCaixaSpreadsheet($modality)) {
             throw new InvalidArgumentException("A importação por planilha ainda não está disponível para {$modality->name}.");
@@ -51,12 +53,17 @@ class CaixaSpreadsheetImporter
         $imported = 0;
         $existing = 0;
         $skipped = 0;
+        $minContestNumber = isset($options['min_contest_number'])
+            ? (int) $options['min_contest_number']
+            : null;
+        $existingContestNumbers = $this->existingContestNumbers($modality);
 
         foreach (array_slice($rows, 1) as $row) {
             $mapped = $this->mapRow($headers, $row);
 
             if ($this->isEmptyRow($mapped)) {
                 $skipped++;
+
                 continue;
             }
 
@@ -64,6 +71,19 @@ class CaixaSpreadsheetImporter
 
             if ($contestNumber <= 0) {
                 $skipped++;
+
+                continue;
+            }
+
+            if ($minContestNumber !== null && $contestNumber < $minContestNumber) {
+                $existing++;
+
+                continue;
+            }
+
+            if (isset($existingContestNumbers[$contestNumber])) {
+                $existing++;
+
                 continue;
             }
 
@@ -78,25 +98,7 @@ class CaixaSpreadsheetImporter
                 unset($metadata[$column]);
             }
 
-            DB::transaction(function () use (
-                $modality,
-                $contestNumber,
-                $drawDate,
-                $metadata,
-                $numbers,
-                &$imported,
-                &$existing,
-            ) {
-                $alreadyExists = Draw::query()
-                    ->where('lottery_modality_id', $modality->id)
-                    ->where('contest_number', $contestNumber)
-                    ->exists();
-
-                if ($alreadyExists) {
-                    $existing++;
-                    return;
-                }
-
+            DB::transaction(function () use ($modality, $contestNumber, $drawDate, $metadata, $numbers) {
                 $draw = Draw::create([
                     'lottery_modality_id' => $modality->id,
                     'contest_number' => $contestNumber,
@@ -110,9 +112,10 @@ class CaixaSpreadsheetImporter
                         'number' => $number,
                     ]);
                 }
-
-                $imported++;
             });
+
+            $existingContestNumbers[$contestNumber] = true;
+            $imported++;
         }
 
         return [
@@ -123,7 +126,19 @@ class CaixaSpreadsheetImporter
     }
 
     /**
-     * @param array<int, Worksheet> $sheets
+     * @return array<int, true>
+     */
+    protected function existingContestNumbers(LotteryModality $modality): array
+    {
+        return Draw::query()
+            ->where('lottery_modality_id', $modality->id)
+            ->pluck('contest_number')
+            ->mapWithKeys(fn ($contestNumber) => [(int) $contestNumber => true])
+            ->all();
+    }
+
+    /**
+     * @param  array<int, Worksheet>  $sheets
      */
     protected function resolveSheet(array $sheets, LotteryModality $modality): ?Worksheet
     {
@@ -151,7 +166,7 @@ class CaixaSpreadsheetImporter
     }
 
     /**
-     * @param array<string, string> $headerMap
+     * @param  array<string, string>  $headerMap
      * @return array<int, string>
      */
     protected function requiredBallColumns(LotteryModality $modality, array $headerMap): array
@@ -160,12 +175,12 @@ class CaixaSpreadsheetImporter
 
         for ($index = 1; $index <= (int) $modality->draw_count; $index++) {
             $columns[] = $this->resolveHeaderName($headerMap, [
-                'Bola' . $index,
-                'Bola ' . $index,
-                'Dezena' . $index,
-                'Dezena ' . $index,
-                $index . 'ª Dezena',
-                $index . 'a Dezena',
+                'Bola'.$index,
+                'Bola '.$index,
+                'Dezena'.$index,
+                'Dezena '.$index,
+                $index.'ª Dezena',
+                $index.'a Dezena',
             ], "Coluna obrigatória ausente: Bola{$index}");
         }
 
@@ -192,8 +207,8 @@ class CaixaSpreadsheetImporter
     }
 
     /**
-     * @param array<string, string> $headerMap
-     * @param array<int, string> $candidates
+     * @param  array<string, string>  $headerMap
+     * @param  array<int, string>  $candidates
      */
     protected function resolveHeaderName(array $headerMap, array $candidates, ?string $errorMessage = null): string
     {

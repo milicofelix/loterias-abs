@@ -5,6 +5,10 @@ export default function AppPreloader({
     title = 'Processando...',
     description = 'Aguarde enquanto finalizamos sua solicitação.',
     finishSignal = 0,
+    estimatedSeconds = 12,
+    displayPercent = true,
+    elapsedSeconds = null,
+    statusLabel = null,
 }) {
     const [progress, setProgress] = useState(0);
     const [mounted, setMounted] = useState(false);
@@ -23,12 +27,8 @@ export default function AppPreloader({
                 setProgress((old) => {
                     if (old >= 94) return old;
 
-                    let increment = 1;
-                    if (old < 18) increment = 9;
-                    else if (old < 38) increment = 6;
-                    else if (old < 60) increment = 4;
-                    else if (old < 80) increment = 2;
-                    else increment = 1;
+                    const cappedEstimate = Math.max(estimatedSeconds, 4);
+                    const increment = 94 / ((cappedEstimate * 1000) / 180);
 
                     return Math.min(old + increment, 94);
                 });
@@ -47,7 +47,7 @@ export default function AppPreloader({
         return () => {
             if (intervalRef.current) clearInterval(intervalRef.current);
         };
-    }, [visible, mounted]);
+    }, [visible, mounted, estimatedSeconds]);
 
     useEffect(() => {
         if (!mounted) return;
@@ -72,6 +72,20 @@ export default function AppPreloader({
     }, []);
 
     const percentText = useMemo(() => `${Math.round(progress)}%`, [progress]);
+    const elapsedText = useMemo(() => {
+        if (elapsedSeconds === null || elapsedSeconds === undefined) {
+            return null;
+        }
+
+        const minutes = Math.floor(elapsedSeconds / 60);
+        const seconds = elapsedSeconds % 60;
+
+        if (minutes <= 0) {
+            return `${seconds}s decorridos`;
+        }
+
+        return `${minutes}min ${String(seconds).padStart(2, '0')}s decorridos`;
+    }, [elapsedSeconds]);
 
     if (!mounted) return null;
 
@@ -90,7 +104,7 @@ export default function AppPreloader({
                         <div className="relative mb-6">
                             <div className="h-20 w-20 rounded-full border-4 border-slate-200 border-t-sky-600 animate-spin" />
                             <div className="absolute inset-0 flex items-center justify-center text-sm font-extrabold text-slate-700">
-                                {percentText}
+                                {displayPercent ? percentText : '...'}
                             </div>
                         </div>
 
@@ -111,8 +125,14 @@ export default function AppPreloader({
                             </div>
 
                             <div className="mt-3 text-sm font-semibold text-slate-600">
-                                {percentText}
+                                {displayPercent ? percentText : (statusLabel || 'Em andamento')}
                             </div>
+
+                            {elapsedText ? (
+                                <div className="mt-1 text-xs font-semibold text-slate-400">
+                                    {elapsedText}
+                                </div>
+                            ) : null}
                         </div>
                     </div>
                 </div>

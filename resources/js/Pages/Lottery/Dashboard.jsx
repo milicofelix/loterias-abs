@@ -1,5 +1,6 @@
 import { Link, router, useForm, usePage } from '@inertiajs/react';
-import { useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     BarChart,
     Bar,
@@ -20,6 +21,7 @@ import {
     Tag,
     lotteryPalette,
 } from '@/Components/LotteryUi';
+import AppPreloader from '@/Components/AppPreloader';
 import { getImportHelp, getPlayInstruction, supportsCaixaOperations } from '@/Components/modalityRules';
 
 export default function Dashboard({
@@ -45,6 +47,17 @@ export default function Dashboard({
         latestDrawExplanation,
     });
     const [insightsLoading, setInsightsLoading] = useState(false);
+    const [syncState, setSyncState] = useState({
+        visible: false,
+        status: null,
+        message: '',
+        error: null,
+        startedAt: null,
+        finishSignal: 0,
+    });
+    const [syncElapsed, setSyncElapsed] = useState(0);
+    const [syncNotice, setSyncNotice] = useState(null);
+    const syncPollTimeoutRef = useRef(null);
     const { flash = {}, auth = {} } = usePage().props;
     const importForm = useForm({ spreadsheet: null });
     const dataHojeISO = () => new Date().toISOString().slice(0, 10);
@@ -110,7 +123,28 @@ export default function Dashboard({
     return () => {
         isMounted = false;
     };
-}, [modality.id]);
+    }, [modality.id]);
+
+    useEffect(() => {
+        if (!syncState.visible || !syncState.startedAt) {
+            setSyncElapsed(0);
+            return undefined;
+        }
+
+        const interval = setInterval(() => {
+            setSyncElapsed(Math.max(0, Math.floor((Date.now() - syncState.startedAt) / 1000)));
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [syncState.visible, syncState.startedAt]);
+
+    useEffect(() => {
+        return () => {
+            if (syncPollTimeoutRef.current) {
+                clearTimeout(syncPollTimeoutRef.current);
+            }
+        };
+    }, []);
 
     const resolvedDashboardNarrative = insights.dashboardNarrative;
     const resolvedLatestDrawExplanation = insights.latestDrawExplanation;
@@ -168,6 +202,115 @@ export default function Dashboard({
         });
     };
 
+    const pollSyncStatus = (syncId) => {
+        axios
+            .get(`/lottery/modalities/${modality.id}/sync-results/${syncId}`, {
+                headers: { Accept: 'application/json' },
+            })
+            .then(({ data }) => {
+                const sync = data?.sync || {};
+
+                setSyncState((current) => ({
+                    ...current,
+                    status: sync.status,
+                    message: sync.message || current.message,
+                    error: sync.error || null,
+                }));
+
+                if (sync.status === 'succeeded') {
+                    setSyncNotice({
+                        type: 'success',
+                        message: sync.message || 'Sincronização concluída com sucesso.',
+                    });
+                    setSyncState((current) => ({
+                        ...current,
+                        visible: false,
+                        finishSignal: Date.now(),
+                    }));
+                    router.reload({ preserveScroll: true });
+                    return;
+                }
+
+                if (sync.status === 'failed') {
+                    setSyncNotice({
+                        type: 'error',
+                        message: sync.message || 'Não foi possível sincronizar os resultados da CAIXA.',
+                    });
+                    setSyncState((current) => ({
+                        ...current,
+                        visible: false,
+                        finishSignal: Date.now(),
+                    }));
+                    return;
+                }
+
+                syncPollTimeoutRef.current = setTimeout(() => pollSyncStatus(syncId), 2500);
+            })
+            .catch(() => {
+                setSyncNotice({
+                    type: 'error',
+                    message: 'Não foi possível consultar o andamento da sincronização.',
+                });
+                setSyncState((current) => ({
+                    ...current,
+                    visible: false,
+                    finishSignal: Date.now(),
+                }));
+            });
+    };
+
+    const startCaixaSync = async () => {
+        if (!auth?.user) {
+            router.visit('/login');
+            return;
+        }
+
+        if (syncPollTimeoutRef.current) {
+            clearTimeout(syncPollTimeoutRef.current);
+        }
+
+        setSyncNotice(null);
+        setSyncState({
+            visible: true,
+            status: 'queued',
+            message: 'Solicitando sincronização com a CAIXA.',
+            error: null,
+            startedAt: Date.now(),
+            finishSignal: 0,
+        });
+
+        try {
+            const { data } = await axios.post(
+                `/lottery/modalities/${modality.id}/sync-results`,
+                {},
+                { headers: { Accept: 'application/json' } }
+            );
+
+            const sync = data?.sync;
+
+            if (!sync?.id) {
+                throw new Error('Resposta de sincronização inválida.');
+            }
+
+            setSyncState((current) => ({
+                ...current,
+                status: sync.status,
+                message: sync.message || 'Sincronização iniciada.',
+            }));
+            pollSyncStatus(sync.id);
+        } catch (error) {
+            setSyncNotice({
+                type: 'error',
+                message: error?.response?.data?.message || 'Não foi possível iniciar a sincronização da CAIXA.',
+            });
+            setSyncState((current) => ({
+                ...current,
+                visible: false,
+                finishSignal: Date.now(),
+            }));
+        }
+    };
+
     const updateManualNumber = (index, value) => {
     const nextNumbers = [...manualResultForm.data.numbers];
     nextNumbers[index] = value;
@@ -205,6 +348,18 @@ export default function Dashboard({
     ];
 
     return (
+        <>
+        <AppPreloader
+            visible={syncState.visible}
+            finishSignal={syncState.finishSignal}
+            title="Sincronizando resultados"
+            description={syncState.message || 'Baixando e importando concursos oficiais da CAIXA.'}
+            estimatedSeconds={120}
+            displayPercent={false}
+            elapsedSeconds={syncElapsed}
+            statusLabel={syncState.status === 'running' ? 'Importando concursos' : 'Preparando sincronização'}
+        />
+
         <LotteryPage>
             <div className="space-y-8 md:space-y-10">
                 <HeroBanner
@@ -244,6 +399,18 @@ export default function Dashboard({
                 {flash.error ? (
                     <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-5 py-4 font-semibold text-rose-700">
                         {flash.error}
+                    </div>
+                ) : null}
+
+                {syncNotice ? (
+                    <div
+                        className={`rounded-[24px] border px-5 py-4 font-semibold ${
+                            syncNotice.type === 'success'
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                : 'border-rose-200 bg-rose-50 text-rose-700'
+                        }`}
+                    >
+                        {syncNotice.message}
                     </div>
                 ) : null}
 
@@ -331,11 +498,12 @@ export default function Dashboard({
                             {canManageCaixa ? (
                                 <button
                                     type="button"
-                                    onClick={() => router.post(`/lottery/modalities/${modality.id}/sync-results`)}
+                                    onClick={startCaixaSync}
+                                    disabled={syncState.visible}
                                     className="inline-flex w-full items-center justify-center rounded-2xl px-5 py-4 text-base font-semibold text-white shadow-[0_18px_30px_rgba(12,90,150,0.18)]"
                                     style={{ background: 'linear-gradient(180deg, #1670b6 0%, #0c5a96 100%)' }}
                                 >
-                                    Sincronizar resultados da CAIXA
+                                    {syncState.visible ? 'Sincronizando...' : 'Sincronizar resultados da CAIXA'}
                                 </button>
                             ) : (
                                 <div className="rounded-[24px] border px-5 py-4 text-sm leading-7" style={{ borderColor: lotteryPalette.line, backgroundColor: '#fafcff', color: lotteryPalette.muted }}>
@@ -584,5 +752,6 @@ export default function Dashboard({
                 </SurfaceCard>
             </div>
         </LotteryPage>
+        </>
     );
 }

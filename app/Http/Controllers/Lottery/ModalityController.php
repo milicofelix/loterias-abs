@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Lottery;
 
 use App\Http\Controllers\Controller;
+use App\Models\Draw;
 use App\Models\LotteryModality;
 use App\Services\Lottery\Agents\CombinationAnalysisAgentService;
 use App\Services\Lottery\Agents\DashboardNarratorAgentService;
@@ -15,6 +16,7 @@ use App\Services\Lottery\DelayAnalysisService;
 use App\Services\Lottery\HistoricalPrizeSummaryService;
 use App\Services\Lottery\Importers\CaixaSpreadsheetImporter;
 use App\Services\Lottery\LotteryRulesService;
+use App\Services\Lottery\LotterySyncStatusStore;
 use App\Services\Lottery\ManualDrawCreationService;
 use App\Services\Lottery\SmartGameGeneratorGatewayService;
 use App\Services\Lottery\SmartGameGeneratorService;
@@ -168,8 +170,7 @@ class ModalityController extends Controller
         LotteryModality $modality,
         StatisticsService $stats,
         DelayAnalysisService $delay,
-        DashboardNarratorAgentService $dashboardNarratorAgent,
-        DrawExplainerAgentService $drawExplainerAgent
+        DashboardNarratorAgentService $dashboardNarratorAgent
     ): JsonResponse {
         $recentWindow = 20;
 
@@ -204,21 +205,16 @@ class ModalityController extends Controller
             ->get()
             ->avg(fn ($draw) => $draw->numbers->sum('number'));
 
-        $historicalAverageSum = $modality->draws()
-            ->with('numbers')
-            ->get()
-            ->avg(fn ($draw) => $draw->numbers->sum('number'));
-
         return response()->json([
             'dashboardNarrative' => $dashboardNarratorAgent->narrate($modality, [
                 'window' => $recentWindow,
                 'top_recent_numbers' => $topRecentNumbers,
                 'top_delayed_numbers' => $topDelayedNumbers,
                 'recent_average_sum' => $recentAverageSum,
-                'historical_average_sum' => $historicalAverageSum,
+                'historical_average_sum' => null,
             ]),
             'latestDrawExplanation' => $latestDraw
-                ? $drawExplainerAgent->explain($modality, $latestDraw)
+                ? $this->buildLightLatestDrawExplanation($latestDraw)
                 : null,
         ]);
     }
@@ -258,12 +254,14 @@ class ModalityController extends Controller
 
             $meta = null;
             $requestedGames = max(1, min(20, (int) $request->input('games', 5)));
+            $requestedCount = (int) $request->input('count', $modality->bet_min_count);
             $minScore = (int) $request->input('min_score', 0);
             $expandedGames = $minScore >= 85
                 ? $requestedGames
                 : min(20, max($requestedGames, min(max($requestedGames * 3, $requestedGames + 4), 15)));
             $generationOptions = array_merge($request->all(), [
                 'games' => $expandedGames,
+                'count' => $requestedCount,
             ]);
 
             try {
@@ -300,7 +298,8 @@ class ModalityController extends Controller
             $games = $this->normalizeSmartGamesLight(
                 $modality,
                 $games,
-                $request->input('strategy', 'balanced')
+                $request->input('strategy', 'balanced'),
+                $requestedCount
             );
 
             $games = $this->selectDiverseSmartGames($games, $requestedGames);
@@ -366,7 +365,8 @@ class ModalityController extends Controller
     protected function normalizeSmartGamesLight(
         LotteryModality $modality,
         array $games,
-        string $strategy
+        string $strategy,
+        int $expectedCount
     ): array {
         $normalized = [];
 
@@ -382,7 +382,7 @@ class ModalityController extends Controller
                 ->values()
                 ->all();
 
-            if (count($numbers) !== (int) $modality->draw_count) {
+            if (count($numbers) !== $expectedCount) {
                 continue;
             }
 
@@ -642,9 +642,39 @@ class ModalityController extends Controller
     }
 
     public function syncResults(
+        Request $request,
         LotteryModality $modality,
-        CaixaResultsSyncService $syncService
-    ): \Illuminate\Http\RedirectResponse {
+        CaixaResultsSyncService $syncService,
+        LotterySyncStatusStore $syncStatusStore
+    ): JsonResponse|RedirectResponse {
+        if ($request->expectsJson()) {
+            $syncId = $syncStatusStore->create($modality, (int) $request->user()->id);
+
+            app()->terminating(function () use ($modality, $syncService, $syncStatusStore, $syncId) {
+                $this->prepareLongRunningRequest();
+                $syncStatusStore->markRunning($syncId);
+
+                try {
+                    $result = $syncService->sync($modality);
+                    $syncStatusStore->markSucceeded($syncId, $result);
+                } catch (InvalidArgumentException $e) {
+                    $syncStatusStore->markFailed($syncId, $e->getMessage());
+                } catch (\Throwable $e) {
+                    \Log::error('[LOTTERY][CAIXA_SYNC] falha ao sincronizar resultados', [
+                        'modality' => $modality->code,
+                        'message' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+
+                    $syncStatusStore->markFailed($syncId, 'Não foi possível sincronizar os resultados da CAIXA.');
+                }
+            });
+
+            return response()->json([
+                'sync' => $syncStatusStore->get($syncId),
+            ], 202);
+        }
+
         $this->prepareLongRunningRequest();
         try {
             $result = $syncService->sync($modality);
@@ -660,6 +690,91 @@ class ModalityController extends Controller
         } catch (\Throwable $e) {
             return back()->with('error', 'Não foi possível sincronizar os resultados da CAIXA.');
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function buildLightLatestDrawExplanation(Draw $draw): array
+    {
+        $numbers = $draw->numbers
+            ->pluck('number')
+            ->map(fn ($value) => (int) $value)
+            ->sort()
+            ->values()
+            ->all();
+
+        if ($numbers === []) {
+            return [
+                'name' => 'draw-explainer-light',
+                'version' => 1,
+                'contest_number' => $draw->contest_number,
+                'numbers' => [],
+                'summary' => "Concurso {$draw->contest_number} carregado sem dezenas vinculadas.",
+                'highlights' => [],
+                'statistics' => [
+                    'sum' => 0,
+                    'range' => 0,
+                    'even_count' => 0,
+                    'odd_count' => 0,
+                    'consecutive_count' => 0,
+                ],
+            ];
+        }
+
+        $sum = array_sum($numbers);
+        $range = max($numbers) - min($numbers);
+        $evenCount = count(array_filter($numbers, fn (int $number) => $number % 2 === 0));
+        $oddCount = count($numbers) - $evenCount;
+        $consecutiveCount = 0;
+
+        for ($index = 1; $index < count($numbers); $index++) {
+            if ($numbers[$index] === $numbers[$index - 1] + 1) {
+                $consecutiveCount++;
+            }
+        }
+
+        return [
+            'name' => 'draw-explainer-light',
+            'version' => 1,
+            'contest_number' => $draw->contest_number,
+            'numbers' => $numbers,
+            'summary' => sprintf(
+                'O concurso %d teve soma %d, amplitude %d e %d sequência(s) consecutiva(s).',
+                $draw->contest_number,
+                $sum,
+                $range,
+                $consecutiveCount,
+            ),
+            'highlights' => [
+                "Distribuição entre pares e ímpares: {$evenCount} pares e {$oddCount} ímpares.",
+                "Leitura direta: soma {$sum}, amplitude {$range}.",
+            ],
+            'statistics' => [
+                'sum' => $sum,
+                'range' => $range,
+                'even_count' => $evenCount,
+                'odd_count' => $oddCount,
+                'consecutive_count' => $consecutiveCount,
+            ],
+        ];
+    }
+
+    public function syncResultsStatus(
+        Request $request,
+        LotteryModality $modality,
+        string $syncId,
+        LotterySyncStatusStore $syncStatusStore
+    ): JsonResponse {
+        $status = $syncStatusStore->get($syncId);
+
+        abort_unless($status, 404);
+        abort_unless((int) ($status['modality_id'] ?? 0) === (int) $modality->id, 404);
+        abort_unless((int) ($status['user_id'] ?? 0) === (int) $request->user()->id, 404);
+
+        return response()->json([
+            'sync' => $status,
+        ]);
     }
 
     public function history(Request $request, LotteryModality $modality)

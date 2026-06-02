@@ -1,11 +1,11 @@
 <?php
 
-use App\Models\LotteryModality;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use App\Models\Draw;
 use App\Models\DrawNumber;
-use Inertia\Testing\AssertableInertia as Assert;
+use App\Models\LotteryModality;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Inertia\Testing\AssertableInertia as Assert;
 
 uses(RefreshDatabase::class);
 
@@ -51,7 +51,6 @@ it('pode gerar números através do endpoint', function () {
             'numbers',
         ]);
 });
-
 
 it('pode gerar jogos inteligentes por meio do endpoint', function () {
     $quina = LotteryModality::factory()->quina()->create();
@@ -144,6 +143,45 @@ it('pode gerar jogos inteligentes por meio do motor externo', function () {
 
     expect($response->json('games.0.engine_weighted_score'))->toBe(88.0);
     expect($response->json('games.0.weighted_score'))->not->toBeNull();
+});
+
+it('envia quantidade personalizada de números para o motor externo', function () {
+    Http::fake(function ($request) {
+        $payload = $request->data();
+
+        expect($payload['count'])->toBe(7)
+            ->and($payload['modality']['bet_min_count'])->toBe(5)
+            ->and($payload['modality']['bet_max_count'])->toBe(15);
+
+        return Http::response([
+            'games' => [
+                [
+                    'numbers' => [5, 11, 22, 41, 49, 53, 71],
+                    'weighted_score' => 88,
+                    'classification' => 'Excelente',
+                    'profile' => 'Quente',
+                    'reason' => 'Resposta do engine Go.',
+                ],
+            ],
+            'meta' => [
+                'generated_candidates' => 100,
+                'valid_candidates' => 20,
+                'elapsed_ms' => 15,
+            ],
+        ], 200);
+    });
+
+    $quina = LotteryModality::factory()->quina()->create();
+
+    $response = $this->postJson("/lottery/modalities/{$quina->id}/generate-smart", [
+        'strategy' => 'hot',
+        'games' => 1,
+        'count' => 7,
+        'candidate_pool' => 1000,
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('games.0.numbers', [5, 11, 22, 41, 49, 53, 71]);
 });
 
 it('retorna 422 ao tentar gerar jogos inteligentes com estratégia inválida', function () {
