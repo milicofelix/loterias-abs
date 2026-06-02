@@ -23,8 +23,10 @@ class CombinationHistoryFactory extends Factory
                 'even_count' => 2,
                 'odd_count' => 3,
             ],
+            'bet_result_snapshot' => null,
             'bet_contest_number' => null,
             'bet_registered_at' => null,
+            'bet_checked_at' => null,
         ];
     }
 

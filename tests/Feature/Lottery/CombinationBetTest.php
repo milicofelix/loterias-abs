@@ -69,4 +69,12 @@ it('pode conferir a aposta com o resultado oficial', function () {
         ->where('officialResult.contest_number', 6999)
         ->where('checkResult.hit_count', 1)
     );
+
+    $history->refresh();
+
+    expect($history->bet_checked_at)->not->toBeNull()
+        ->and($history->bet_result_snapshot['official_result']['contest_number'])->toBe(6999)
+        ->and($history->bet_result_snapshot['official_result']['numbers'])->toBe([19, 46, 49, 70, 79])
+        ->and($history->bet_result_snapshot['check_result']['hit_count'])->toBe(1)
+        ->and($history->bet_result_snapshot['check_result']['hits'])->toBe([49]);
 });

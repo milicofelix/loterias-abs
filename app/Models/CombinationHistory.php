@@ -17,14 +17,18 @@ class CombinationHistory extends Model
         'numbers',
         'source',
         'analysis_snapshot',
+        'bet_result_snapshot',
         'bet_contest_number',
         'bet_registered_at',
+        'bet_checked_at',
     ];
 
     protected $casts = [
         'numbers' => 'array',
         'analysis_snapshot' => 'array',
+        'bet_result_snapshot' => 'array',
         'bet_registered_at' => 'datetime',
+        'bet_checked_at' => 'datetime',
     ];
 
     public function modality(): BelongsTo

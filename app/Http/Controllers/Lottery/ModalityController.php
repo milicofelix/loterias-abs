@@ -892,6 +892,25 @@ class ModalityController extends Controller
         $drawNumbers = $draw->numbers->pluck('number')->map(fn ($value) => (int) $value)->sort()->values()->all();
         $userNumbers = collect($item->numbers)->map(fn ($value) => (int) $value)->sort()->values()->all();
         $hits = collect($userNumbers)->intersect($drawNumbers)->values()->all();
+        $officialResult = [
+            'contest_number' => $draw->contest_number,
+            'numbers' => $drawNumbers,
+        ];
+        $checkResult = [
+            'hits' => $hits,
+            'hit_count' => count($hits),
+            'is_prized' => $rulesService->isPrized($modality, count($hits)),
+            'prize_label' => $rulesService->prizeLabel($modality, count($hits)),
+            'prize_hits' => $rulesService->prizeHitRange($modality),
+        ];
+
+        $item->forceFill([
+            'bet_result_snapshot' => [
+                'official_result' => $officialResult,
+                'check_result' => $checkResult,
+            ],
+            'bet_checked_at' => now(),
+        ])->save();
 
         return inertia('Lottery/CheckBet', [
             'modality' => $modality,
@@ -901,17 +920,8 @@ class ModalityController extends Controller
                 'bet_contest_number' => $item->bet_contest_number,
                 'bet_registered_at' => $item->bet_registered_at?->format('d/m/Y H:i'),
             ],
-            'officialResult' => [
-                'contest_number' => $draw->contest_number,
-                'numbers' => $drawNumbers,
-            ],
-            'checkResult' => [
-                'hits' => $hits,
-                'hit_count' => count($hits),
-                'is_prized' => $rulesService->isPrized($modality, count($hits)),
-                'prize_label' => $rulesService->prizeLabel($modality, count($hits)),
-                'prize_hits' => $rulesService->prizeHitRange($modality),
-            ],
+            'officialResult' => $officialResult,
+            'checkResult' => $checkResult,
         ]);
     }
 
