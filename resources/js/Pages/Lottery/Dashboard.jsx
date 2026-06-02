@@ -19,8 +19,8 @@ import {
     SurfaceCard,
     Tag,
     lotteryPalette,
-} from '../../components/LotteryUi';
-import { getImportHelp, getPlayInstruction, supportsCaixaOperations } from '../../Components/modalityRules';
+} from '@/Components/LotteryUi';
+import { getImportHelp, getPlayInstruction, supportsCaixaOperations } from '@/Components/modalityRules';
 
 export default function Dashboard({
     modality,

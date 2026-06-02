@@ -8,7 +8,7 @@ import {
     SectionHeading,
     SurfaceCard,
     lotteryPalette,
-} from '../../components/LotteryUi';
+} from '@/Components/LotteryUi';
 
 export default function History({ modality, draws, filters }) {
     const [search, setSearch] = useState(filters.q || '');

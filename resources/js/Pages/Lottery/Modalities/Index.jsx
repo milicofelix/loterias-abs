@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { getPlayInstruction } from '../../../Components/modalityRules';
+import { getPlayInstruction } from '@/Components/modalityRules';
 import LotteryLogo from '@/Components/LotteryLogo';
 import LotteryTopbar from '@/Components/LotteryTopbar';
 

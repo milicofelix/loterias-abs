@@ -38,6 +38,22 @@ it('does not delete combination history item from another modality', function ()
     $this->assertDatabaseHas('combination_histories', ['id' => $item->id, 'deleted_at' => null]);
 });
 
+it('does not delete combination history item from another user', function () {
+    $user = User::factory()->create();
+    $otherUser = User::factory()->create();
+    $modality = LotteryModality::factory()->quina()->create();
+
+    $item = CombinationHistory::factory()->create([
+        'user_id' => $otherUser->id,
+        'lottery_modality_id' => $modality->id,
+    ]);
+
+    $response = $this->actingAs($user)->delete("/lottery/modalities/{$modality->id}/combination-history/{$item->id}");
+
+    $response->assertNotFound();
+    $this->assertDatabaseHas('combination_histories', ['id' => $item->id, 'deleted_at' => null]);
+});
+
 it('soft deletes all private combination history items from the modality', function () {
     $user = User::factory()->create();
     $modality = LotteryModality::factory()->quina()->create();
@@ -45,6 +61,11 @@ it('soft deletes all private combination history items from the modality', funct
 
     $items = CombinationHistory::factory()->count(3)->create([
         'user_id' => $user->id,
+        'lottery_modality_id' => $modality->id,
+    ]);
+
+    $otherUserItem = CombinationHistory::factory()->create([
+        'user_id' => User::factory()->create()->id,
         'lottery_modality_id' => $modality->id,
     ]);
 
@@ -62,4 +83,5 @@ it('soft deletes all private combination history items from the modality', funct
     }
 
     $this->assertDatabaseHas('combination_histories', ['id' => $otherItem->id, 'deleted_at' => null]);
+    $this->assertDatabaseHas('combination_histories', ['id' => $otherUserItem->id, 'deleted_at' => null]);
 });

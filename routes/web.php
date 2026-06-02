@@ -1,10 +1,10 @@
 <?php
 
+use App\Http\Controllers\Lottery\GameController;
+use App\Http\Controllers\Lottery\ModalityController;
+use App\Http\Controllers\Lottery\RepeatedCombinationController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Lottery\ModalityController;
-use App\Http\Controllers\Lottery\GameController;
-use App\Http\Controllers\Lottery\RepeatedCombinationController;
 
 Route::redirect('/', '/login');
 
@@ -25,7 +25,7 @@ Route::prefix('lottery')->group(function () {
 
     Route::get('/modalities/{modality}', [ModalityController::class, 'show'])
         ->name('lottery.modalities.show');
-    
+
     Route::get('/modalities/{modality}/dashboard-insights', [ModalityController::class, 'dashboardInsights'])
         ->name('lottery.modalities.dashboard-insights');
 
@@ -55,11 +55,14 @@ Route::prefix('lottery')->group(function () {
         Route::get('/modalities/{modality}/bets', [ModalityController::class, 'bets'])
             ->name('lottery.bets');
 
-        Route::get('/modalities/{modality}/combination-history', [ModalityController::class, 'combinationHistory'])
-            ->name('lottery.combination-history');
-
         Route::post('/modalities/{modality}/sync-results', [ModalityController::class, 'syncResults'])
             ->name('lottery.modalities.sync-results');
+
+        Route::delete('/modalities/{modality}/combination-history/{item}', [ModalityController::class, 'destroyCombinationHistory'])
+            ->name('lottery.combination-history.destroy');
+
+        Route::delete('/modalities/{modality}/combination-history', [ModalityController::class, 'clearCombinationHistory'])
+            ->name('lottery.combination-history.clear');
     });
 
     Route::get('/modalities/{modality}/history', [ModalityController::class, 'history'])
@@ -74,9 +77,4 @@ Route::prefix('lottery')->group(function () {
     Route::get('/my-bets', [ModalityController::class, 'myBets'])
         ->name('lottery.my-bets');
 
-    Route::delete('/modalities/{modality}/combination-history/{item}', [ModalityController::class, 'destroyCombinationHistory'])
-        ->name('lottery.combination-history.destroy');
-
-    Route::delete('/modalities/{modality}/combination-history', [ModalityController::class, 'clearCombinationHistory'])
-        ->name('lottery.combination-history.clear');
 });

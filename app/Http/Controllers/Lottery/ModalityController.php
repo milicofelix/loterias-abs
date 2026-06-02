@@ -10,21 +10,20 @@ use App\Services\Lottery\Agents\DrawExplainerAgentService;
 use App\Services\Lottery\CaixaResultsSyncService;
 use App\Services\Lottery\CombinationGeneratorService;
 use App\Services\Lottery\CombinationHistoryService;
+use App\Services\Lottery\CombinationInsightsService;
 use App\Services\Lottery\DelayAnalysisService;
-use App\Services\Lottery\StatisticsService;
+use App\Services\Lottery\HistoricalPrizeSummaryService;
 use App\Services\Lottery\Importers\CaixaSpreadsheetImporter;
 use App\Services\Lottery\LotteryRulesService;
+use App\Services\Lottery\ManualDrawCreationService;
+use App\Services\Lottery\SmartGameGeneratorGatewayService;
 use App\Services\Lottery\SmartGameGeneratorService;
+use App\Services\Lottery\StatisticsService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\Auth;
 use InvalidArgumentException;
-use App\Services\Lottery\SmartGameGeneratorGatewayService;
-use App\Services\Lottery\HistoricalPrizeSummaryService;
-use App\Services\Lottery\ManualDrawCreationService;
-use App\Services\Lottery\CombinationInsightsService;
 
 class ModalityController extends Controller
 {
@@ -152,6 +151,7 @@ class ModalityController extends Controller
             'recentDraws' => $recentDraws,
             'totalDraws' => $totalDraws,
             'latestContestNumber' => $latestDraw?->contest_number,
+            'suggestedNextContestNumber' => ((int) ($latestDraw?->contest_number ?? 0)) + 1,
             'dashboardNarrative' => $dashboardNarrative,
             'latestDrawExplanation' => $latestDrawExplanation,
             'rules' => [
@@ -161,6 +161,65 @@ class ModalityController extends Controller
                 'supports_caixa_import' => $rulesService->supportsCaixaSpreadsheet($modality),
                 'supports_smart_generation' => $rulesService->supportsSmartGeneration($modality),
             ],
+        ]);
+    }
+
+    public function dashboardInsights(
+        LotteryModality $modality,
+        StatisticsService $stats,
+        DelayAnalysisService $delay,
+        DashboardNarratorAgentService $dashboardNarratorAgent,
+        DrawExplainerAgentService $drawExplainerAgent
+    ): JsonResponse {
+        $recentWindow = 20;
+
+        $latestDraw = $modality->draws()
+            ->with('numbers')
+            ->orderByDesc('contest_number')
+            ->first();
+
+        $frequenciesLast20 = $stats->numberFrequencies($modality, lastDraws: $recentWindow);
+        $delays = $delay->numberDelays($modality);
+
+        $topRecentNumbers = collect($frequenciesLast20)
+            ->sortDesc()
+            ->keys()
+            ->take(5)
+            ->map(fn ($number) => (int) $number)
+            ->values()
+            ->all();
+
+        $topDelayedNumbers = collect($delays)
+            ->sortDesc()
+            ->keys()
+            ->take(5)
+            ->map(fn ($number) => (int) $number)
+            ->values()
+            ->all();
+
+        $recentAverageSum = $modality->draws()
+            ->with('numbers')
+            ->orderByDesc('contest_number')
+            ->limit($recentWindow)
+            ->get()
+            ->avg(fn ($draw) => $draw->numbers->sum('number'));
+
+        $historicalAverageSum = $modality->draws()
+            ->with('numbers')
+            ->get()
+            ->avg(fn ($draw) => $draw->numbers->sum('number'));
+
+        return response()->json([
+            'dashboardNarrative' => $dashboardNarratorAgent->narrate($modality, [
+                'window' => $recentWindow,
+                'top_recent_numbers' => $topRecentNumbers,
+                'top_delayed_numbers' => $topDelayedNumbers,
+                'recent_average_sum' => $recentAverageSum,
+                'historical_average_sum' => $historicalAverageSum,
+            ]),
+            'latestDrawExplanation' => $latestDraw
+                ? $drawExplainerAgent->explain($modality, $latestDraw)
+                : null,
         ]);
     }
 
@@ -220,19 +279,22 @@ class ModalityController extends Controller
                     ];
                 }
             } catch (\Throwable $e) {
-                // $games = $localGenerator->generate($modality, $request->all());
-                // $meta = [
-                //     'engine' => 'php',
-                //     'fallback' => true,
-                //     'fallback_reason' => $e->getMessage(),
-                // ];
+                if ($e instanceof InvalidArgumentException) {
+                    throw $e;
+                }
+
                 \Log::error('[LOTTERY][SMART_GENERATION] engine externa falhou', [
                     'modality' => $modality->code,
                     'message' => $e->getMessage(),
                     'trace' => $e->getTraceAsString(),
                 ]);
 
-                throw $e;
+                $games = $localGenerator->generate($modality, $generationOptions);
+                $meta = [
+                    'engine' => 'php',
+                    'fallback' => true,
+                    'fallback_reason' => $e->getMessage(),
+                ];
             }
 
             $games = $this->normalizeSmartGamesLight(
@@ -298,7 +360,7 @@ class ModalityController extends Controller
     }
 
     /**
-     * @param array<int, array<string, mixed>> $games
+     * @param  array<int, array<string, mixed>>  $games
      * @return array<int, array<string, mixed>>
      */
     protected function normalizeSmartGamesLight(
@@ -309,7 +371,7 @@ class ModalityController extends Controller
         $normalized = [];
 
         foreach ($games as $game) {
-            if (!isset($game['numbers']) || !is_array($game['numbers'])) {
+            if (! isset($game['numbers']) || ! is_array($game['numbers'])) {
                 continue;
             }
 
@@ -374,15 +436,14 @@ class ModalityController extends Controller
             ];
         }
 
-        usort($normalized, fn ($a, $b) =>
-            ($b['weighted_score'] ?? 0) <=> ($a['weighted_score'] ?? 0)
+        usort($normalized, fn ($a, $b) => ($b['weighted_score'] ?? 0) <=> ($a['weighted_score'] ?? 0)
         );
 
         return $normalized;
     }
 
     /**
-     * @param array<int, array<string, mixed>> $games
+     * @param  array<int, array<string, mixed>>  $games
      * @return array<int, array<string, mixed>>
      */
     protected function selectDiverseSmartGames(array $games, int $limit): array
@@ -413,8 +474,8 @@ class ModalityController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $candidate
-     * @param array<int, array<string, mixed>> $selected
+     * @param  array<string, mixed>  $candidate
+     * @param  array<int, array<string, mixed>>  $selected
      */
     protected function diversityBonus(array $candidate, array $selected): float
     {
@@ -454,7 +515,7 @@ class ModalityController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $insights
+     * @param  array<string, mixed>  $insights
      */
     protected function inferSmartProfile(string $strategy, int $topFrequencyHits, int $topDelayHits, array $insights): string
     {
@@ -533,7 +594,6 @@ class ModalityController extends Controller
             ]);
         }, $games, array_keys($games));
     }
-
 
     public function importSpreadsheet(
         Request $request,
@@ -658,13 +718,12 @@ class ModalityController extends Controller
         Request $request,
         LotteryModality $modality,
         \App\Models\CombinationHistory $item
-    ): JsonResponse 
-    {
-        
-        if (! $request->user()) {        
-            return response()->json([  
+    ): JsonResponse {
+
+        if (! $request->user()) {
+            return response()->json([
                 'message' => 'Faça login para registrar uma aposta.',
-                ], 401);
+            ], 401);
         }
 
         abort_unless($item->lottery_modality_id === $modality->id, 404);
@@ -815,20 +874,23 @@ class ModalityController extends Controller
     }
 
     public function destroyCombinationHistory(
+        Request $request,
         LotteryModality $modality,
         \App\Models\CombinationHistory $item
     ): \Illuminate\Http\RedirectResponse {
         abort_unless($item->lottery_modality_id === $modality->id, 404);
+        abort_unless($item->user_id === $request->user()?->id, 404);
 
         $item->delete();
 
         return back()->with('success', 'Histórico removido com sucesso.');
     }
 
-    public function clearCombinationHistory(LotteryModality $modality): \Illuminate\Http\RedirectResponse
+    public function clearCombinationHistory(Request $request, LotteryModality $modality): \Illuminate\Http\RedirectResponse
     {
         \App\Models\CombinationHistory::query()
             ->where('lottery_modality_id', $modality->id)
+            ->where('user_id', $request->user()?->id)
             ->delete();
 
         return back()->with('success', 'Histórico limpo com sucesso.');
@@ -855,8 +917,8 @@ class ModalityController extends Controller
         $validated = $request->validate([
             'contest_number' => ['required', 'integer', 'min:1'],
             'draw_date' => ['required', 'date'],
-            'numbers' => ['required', 'array', 'size:' . $modality->draw_count],
-            'numbers.*' => ['required', 'integer', 'min:' . $modality->min_number, 'max:' . $modality->max_number],
+            'numbers' => ['required', 'array', 'size:'.$modality->draw_count],
+            'numbers.*' => ['required', 'integer', 'min:'.$modality->min_number, 'max:'.$modality->max_number],
             'observation' => ['nullable', 'string'],
         ]);
 

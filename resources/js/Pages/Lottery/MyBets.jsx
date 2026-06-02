@@ -11,7 +11,7 @@ import {
     SurfaceCard,
     Tag,
     lotteryPalette,
-} from '../../components/LotteryUi';
+} from '@/Components/LotteryUi';
 
 export default function MyBets({ items, filters = {}, dayOptions = [7, 15, 30, 60, 90] }) {
     const currentDays = Number(filters.days || dayOptions[0] || 7);

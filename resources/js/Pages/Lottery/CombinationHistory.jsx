@@ -10,7 +10,7 @@ import {
     SurfaceCard,
     Tag,
     lotteryPalette,
-} from '../../components/LotteryUi';
+} from '@/Components/LotteryUi';
 
 export default function CombinationHistory({ modality, items, filters = {} }) {
 
