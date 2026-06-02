@@ -239,6 +239,7 @@ export default function Play({ modality, prefilledNumbers = [] }) {
     const aboveMinScoreCount = Number(smartMeta?.above_min_score_count || 0);
     const returnedGames = Number(smartMeta?.returned_games || 0);
     const usedMinScoreFallback = Boolean(smartMeta?.used_min_score_fallback);
+    const requestedSmartGamesCount = Math.max(1, Number(smartGamesCount) || 1);
 
     const renderMinScoreMessage = () => {
         if (!smartMeta || requestedMinScore <= 0) {
@@ -292,6 +293,47 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                 candidatos suficientes acima desse limite. Por isso, retornou os melhores jogos disponíveis.
             </div>
         );
+    };
+
+    const renderSmartGenerationMessage = () => {
+        if (!smartMeta) {
+            return null;
+        }
+
+        if (returnedGames === 0) {
+            return (
+                <div
+                    className="mt-4 rounded-[22px] border px-4 py-4 text-sm leading-7 md:text-base"
+                    style={{
+                        borderColor: '#f5d78e',
+                        backgroundColor: '#fff9e8',
+                        color: '#8a6500',
+                    }}
+                >
+                    Nenhum jogo passou pelos filtros desta rodada. Tente uma quantidade menor de números, score livre ou uma
+                    nova geração.
+                </div>
+            );
+        }
+
+        if (returnedGames < requestedSmartGamesCount) {
+            return (
+                <div
+                    className="mt-4 rounded-[22px] border px-4 py-4 text-sm leading-7 md:text-base"
+                    style={{
+                        borderColor: '#f5d78e',
+                        backgroundColor: '#fff9e8',
+                        color: '#8a6500',
+                    }}
+                >
+                    Foram encontrados <strong>{returnedGames}</strong> jogo(s) dos{' '}
+                    <strong>{requestedSmartGamesCount}</strong> solicitados. O motor retornou apenas os candidatos que
+                    passaram pelos filtros estatísticos.
+                </div>
+            );
+        }
+
+        return null;
     };
 
     return (
@@ -585,14 +627,16 @@ export default function Play({ modality, prefilledNumbers = [] }) {
                                 description="Indicadores de processamento retornados pelo motor estatístico."
                             />
 
-                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
                                 <InfoRow label="Candidatos gerados" value={smartMeta.generated_candidates ?? 0} />
                                 <InfoRow label="Candidatos válidos" value={smartMeta.valid_candidates ?? 0} />
+                                <InfoRow label="Filtrados" value={smartMeta.filtered_candidates ?? 0} />
                                 <InfoRow label="Tempo" value={`${smartMeta.elapsed_ms ?? 0} ms`} />
                                 <InfoRow label="Score solicitado" value={requestedMinScore || 'Livre'} />
                                 <InfoRow label="Jogos acima do mínimo" value={aboveMinScoreCount} />
                             </div>
 
+                            {renderSmartGenerationMessage()}
                             {renderMinScoreMessage()}
                         </SurfaceCard>
                     ) : null}
